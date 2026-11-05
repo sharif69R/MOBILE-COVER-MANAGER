@@ -285,5 +285,5 @@ class _Metric extends StatelessWidget {
   final String label,value;
   const _Metric({required this.label,required this.value});
   @override
-  Widget build(BuildContext context)=>Container(padding:const EdgeInsets.all(14),decoration:BoxDecoration(color:Colors.white,borderRadius:BorderRadius.circular(15)),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(value,style:const TextStyle(fontSize:23,fontWeight:FontWeight.w900)),Text(label,style:const TextStyle(fontSize:10,color:Colors.black54)]));
+  Widget build(BuildContext context)=>Container(padding:const EdgeInsets.all(14),decoration:BoxDecoration(color:Colors.white,borderRadius:BorderRadius.circular(15)),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(value,style:const TextStyle(fontSize:23,fontWeight:FontWeight.w900)),Text(label,style:const TextStyle(fontSize:10,color:Colors.black54))]));
 }
