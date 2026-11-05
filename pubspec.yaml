@@ -1,7 +1,7 @@
 name: mobile_cover_manager
 description: Repair X Zone Cover Management
 publish_to: 'none'
-version: 1.0.1+2
+version: 1.0.2+3
 environment:
   sdk: '>=3.4.0 <4.0.0'
 dependencies:
@@ -17,3 +17,5 @@ dev_dependencies:
   flutter_lints: ^5.0.0
 flutter:
   uses-material-design: true
+  assets:
+    - assets/phones.json
