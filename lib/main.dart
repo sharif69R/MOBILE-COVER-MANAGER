@@ -385,6 +385,7 @@ class _PhoneThumbState extends State<PhoneThumb> {
     'oppo': ['oppo.com', 'image.oppo.com'],
     'vivo': ['vivo.com', 'vivofs.com'],
     'iqoo': ['iqoo.com', 'vivo.com', 'vivofs.com'],
+    'vivo': ['vivo.com', 'vivofs.com', 'iqoo.com'],
     'realme': ['realme.com', 'realme.net'],
     'tecno': ['tecno-mobile.com'],
     'infinix': ['infinixmobility.com'],
@@ -417,7 +418,9 @@ class _PhoneThumbState extends State<PhoneThumb> {
       .replaceAll('&amp;', '&');
 
   static Future<String?> _officialBackImageUrl(String brand, String model) async {
-    final brandKey = brand.toLowerCase().replaceAll(RegExp(r'[^a-z]'), '');
+    final normalizedBrand = brand.toLowerCase().replaceAll(RegExp(r'[^a-z]'), '');
+    final brandKey = _officialDomains.keys.firstWhere(
+      (key) => normalizedBrand.contains(key), orElse: () => normalizedBrand);
     final allowed = _officialDomains[brandKey];
     if (allowed == null || model.trim().isEmpty) return null;
 
