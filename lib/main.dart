@@ -375,9 +375,9 @@ class _PhoneThumbState extends State<PhoneThumb> {
       (brand + '_' + model).toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_');
 
   static const Map<String, List<String>> _officialDomains = {
-    'samsung': ['samsungmobilepress.com', 'images.samsung.com'],
-    'apple': ['apple.com', 'is1-ssl.mzstatic.com'],
-    'iphone': ['apple.com', 'is1-ssl.mzstatic.com'],
+    'samsung': ['samsung.com', 'samsungmobilepress.com', 'images.samsung.com'],
+    'apple': ['apple.com', 'is1-ssl.mzstatic.com', 'cdn-apple.com'],
+    'iphone': ['apple.com', 'is1-ssl.mzstatic.com', 'cdn-apple.com'],
     'oneplus': ['oneplus.com', 'image01.oneplus.net', 'oasis.opstatics.com'],
     'xiaomi': ['mi.com', 'appmifile.com', 'mi-img.com'],
     'redmi': ['mi.com', 'appmifile.com', 'mi-img.com'],
