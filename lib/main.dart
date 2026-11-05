@@ -252,7 +252,9 @@ class _HomePageState extends State<HomePage> {
               final count = int.tryParse(qty.text.trim());
               if (count == null || count < 0) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Enter a valid quantity (0 or more).'))); return; }
               setSheet(() => saving = true);
-              final imagePath = old?['image_path'] as String? ?? await cacheImage(phone);
+              final oldPath = old?['image_path'] as String?;
+              final imagePath = oldPath != null && oldPath.contains('official_phone_photos')
+                  ? oldPath : await cacheImage(phone);
               await widget.db.insert('stock',{
                 'phone_id':phone.id,'brand':phone.brand,'model':phone.model,
                 'image_path':imagePath,'image_url':phone.image,
