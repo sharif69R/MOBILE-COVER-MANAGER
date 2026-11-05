@@ -416,6 +416,15 @@ class _PhoneThumbState extends State<PhoneThumb> {
       .replaceAll(r'\/', '/')
       .replaceAll('&amp;', '&');
 
+  static String _htmlDecode(String value) => value
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#34;', '"')
+      .replaceAll('&#39;', "'")
+      .replaceAll('&amp;', '&')
+      .replaceAll('&#x2F;', '/')
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>');
+
   static Future<String?> _officialBackImageUrl(String brand, String model) async {
     final normalizedBrand = brand.toLowerCase().replaceAll(RegExp(r'[^a-z]'), '');
     final brandKey = _officialDomains.keys.firstWhere(
@@ -423,82 +432,55 @@ class _PhoneThumbState extends State<PhoneThumb> {
     final allowed = _officialDomains[brandKey];
     if (allowed == null || model.trim().isEmpty) return null;
 
+    // Bing exposes image-result metadata (image URL + source page) in its
+    // result cards. Unlike the old Google HTML scrape, read those structured
+    // fields and require BOTH the source page and image host to be official.
     try {
-      // Samsung publishes explicit, manufacturer-labelled rear images in its
-      // Mobile Press media library. Use that library instead of image search.
-      if (brandKey == 'samsung') {
-        final q = 'site:api.samsungmobilepress.com/media-assets "Galaxy ' +
-            model.trim() + '"';
-        final searchUri = Uri.https('www.google.com', '/search', {'q': q});
-        final searchResponse = await http.get(searchUri, headers: {
-          'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36'
-        }).timeout(const Duration(seconds: 12));
-        if (searchResponse.statusCode == 200) {
-          final links = RegExp(r'https?://api\.samsungmobilepress\.com/media-assets/[a-z0-9-]+',
-              caseSensitive: false).allMatches(_decodeSearchUrl(searchResponse.body));
-          for (final link in links) {
-            final page = await http.get(Uri.parse(link.group(0)!)).timeout(const Duration(seconds: 12));
-            if (page.statusCode != 200) continue;
-            final html = page.body;
-            final anchors = RegExp(r'<a\b([^>]*)>([\s\S]*?)</a>', caseSensitive: false);
-            for (final match in anchors.allMatches(html)) {
-              final attrs = match.group(1) ?? '';
-              final body = match.group(2) ?? '';
-              final img = RegExp(r'<img\b([^>]*)>', caseSensitive: false)
-                  .firstMatch(body)?.group(1) ?? '';
-              final label = ('$attrs $body $img')
-                  .replaceAll(RegExp(r'<[^>]*>'), ' ')
-                  .replaceAll(RegExp(r'&[^;]+;'), ' ')
-                  .toLowerCase();
-              if (!RegExp(r'\b(back|rear)\b').hasMatch(label)) continue;
-              final href = RegExp(r'''href=["']([^"']+)["']''', caseSensitive: false)
-                  .firstMatch(attrs)?.group(1);
-              if (href == null) continue;
-              final asset = Uri.parse('https://api.samsungmobilepress.com').resolve(href);
-              if (asset.host == 'api.samsungmobilepress.com' &&
-                  asset.path.startsWith('/file/')) return asset.toString();
-            }
-          }
-        }
-      }
-
-      // Other manufacturers: search only their own domains and known official
-      // image CDNs. The result must explicitly identify a rear/back view.
-      final domains = allowed.map((d) => 'site:' + d).join(' OR ');
+      final domains = allowed.map((d) => 'site:$d').join(' OR ');
       final query = '($domains) "' + brand + ' ' + model.trim() +
-          '" (back view OR rear view OR back panel) official product image';
-      final uri = Uri.https('www.google.com', '/search', {
-        'tbm': 'isch',
+          '" (rear view OR back view OR back panel) official';
+      final uri = Uri.https('www.bing.com', '/images/search', {
         'q': query,
-        'safe': 'active'
+        'form': 'HDRSC3',
+        'first': '1',
+        'tsc': 'ImageBasicHover'
       });
       final response = await http.get(uri, headers: {
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36'
-      }).timeout(const Duration(seconds: 15));
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9'
+      }).timeout(const Duration(seconds: 18));
       if (response.statusCode != 200) return null;
 
-      final html = _decodeSearchUrl(response.body);
-      final candidates = <String>[];
-      final murl = RegExp(r'"(https?://[^" ]+)"').allMatches(html);
-      for (final match in murl) {
-        final raw = match.group(1);
-        if (raw == null) continue;
-        final candidate = raw.replaceAll(r'\u003d', '=').replaceAll(r'\u0026', '&');
-        final parsed = Uri.tryParse(candidate);
-        if (parsed == null || parsed.scheme != 'https' ||
-            !_isOfficialHost(parsed.host.toLowerCase(), allowed)) continue;
-        if (!RegExp(r'\.(jpg|jpeg|png|webp)(\?|$)', caseSensitive: false)
-            .hasMatch(parsed.path + (parsed.hasQuery ? '?' + parsed.query : ''))) continue;
-
-        final at = match.start;
-        final context = html.substring(
-          at > 900 ? at - 900 : 0,
-          (at + 900 < html.length) ? at + 900 : html.length
-        ).toLowerCase();
-        if (!RegExp(r'\b(back|rear|rear view|back view|back panel)\b').hasMatch(context)) continue;
-        if (!candidates.contains(candidate)) candidates.add(candidate);
+      final html = response.body;
+      final cards = RegExp(r'<a\b[^>]*class=["''][^"'']*\biusc\b[^"'']*["''][^>]*>',
+          caseSensitive: false).allMatches(html);
+      for (final card in cards) {
+        final tag = card.group(0) ?? '';
+        final attr = RegExp(r'\bm=(["''])(.*?)\1', caseSensitive: false, dotAll: true)
+            .firstMatch(tag);
+        if (attr == null) continue;
+        final rawMeta = _htmlDecode(attr.group(2) ?? '');
+        dynamic decoded;
+        try {
+          decoded = jsonDecode(rawMeta);
+        } catch (_) {
+          continue;
+        }
+        if (decoded is! Map) continue;
+        final imageUrl = (decoded['murl'] ?? '').toString();
+        final sourceUrl = (decoded['purl'] ?? '').toString();
+        final title = _htmlDecode((decoded['t'] ?? '').toString()).toLowerCase();
+        final description = _htmlDecode((decoded['desc'] ?? '').toString()).toLowerCase();
+        final image = Uri.tryParse(imageUrl);
+        final source = Uri.tryParse(sourceUrl);
+        if (image == null || source == null ||
+            image.scheme != 'https' || source.scheme != 'https') continue;
+        if (!_isOfficialHost(source.host.toLowerCase(), allowed)) continue;
+        if (!_isOfficialHost(image.host.toLowerCase(), allowed)) continue;
+        if (!RegExp(r'\b(back|rear)\b').hasMatch('$title $description')) continue;
+        return image.toString();
       }
-      if (candidates.isNotEmpty) return candidates.first;
     } catch (_) {}
     return null;
   }
