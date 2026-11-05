@@ -58,7 +58,27 @@ jobs:
         run: flutter create --platforms=android --project-name mobile_cover_manager --org com.example .
       - name: Set app display name
         run: sed -i 's/android:label="mobile_cover_manager"/android:label="Repair X Zone Cover Management"/' android/app/src/main/AndroidManifest.xml
+      - name: Prepare Repair X Zone launcher logo
+        run: |
+          python3 -m pip install --quiet pillow
+          python3 - <<'PY'
+          import base64, re
+          from PIL import Image
+          from io import BytesIO
+          source = open('lib/main.dart', encoding='utf-8').read()
+          match = re.search(r"const String _repairLogo = '([^']+)'", source)
+          if not match:
+              raise SystemExit('Repair X Zone logo data not found in app source')
+          original = Image.open(BytesIO(base64.b64decode(match.group(1)))).convert('RGBA')
+          original.thumbnail((460, 460), Image.Resampling.LANCZOS)
+          icon = Image.new('RGBA', (512, 512), (255,255,255,255))
+          icon.alpha_composite(original, ((512-original.width)//2, (512-original.height)//2))
+          icon.save('assets/repair_x_zone_icon.png')
+          print('Prepared Repair X Zone launcher icon')
+          PY
       - run: flutter pub get
+      - name: Generate Android launcher icons
+        run: dart run flutter_launcher_icons
       - run: flutter build apk --release
       - uses: actions/upload-artifact@v4
         with:
