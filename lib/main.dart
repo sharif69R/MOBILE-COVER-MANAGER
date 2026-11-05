@@ -506,15 +506,25 @@ class _PhoneThumbState extends State<PhoneThumb> {
     }
   }
 
-  Future<String?> _photo() {
+  Future<String?> _photo() async {
     final key = _key(widget.brand, widget.model);
-    return _photoTasks.putIfAbsent(key, () async {
+    final pending = _photoTasks[key];
+    if (pending != null) {
+      final result = await pending;
+      if (result == null) _photoTasks.remove(key);
+      return result;
+    }
+    final task = () async {
       if (widget.path != null && widget.path!.contains('official_phone_photos')) {
         final existing = File(widget.path!);
         if (await existing.exists() && await existing.length() > 0) return existing.path;
       }
       return loadOfficialPhoto(widget.brand, widget.model);
-    });
+    }();
+    _photoTasks[key] = task;
+    final result = await task;
+    if (result == null) _photoTasks.remove(key);
+    return result;
   }
 
   Widget _placeholder() => CircleAvatar(
