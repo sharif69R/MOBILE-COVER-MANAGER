@@ -54,6 +54,15 @@ class Phone {
       }
     }
     if(brand.isEmpty || brand.toLowerCase()=='other') brand='Other';
+    else {
+      final canonical=brands[brand.toLowerCase()];
+      if(canonical!=null) brand=canonical;
+      else {
+        for(final entry in brands.entries) {
+          if(brand.toLowerCase().contains(entry.key)) { brand=entry.value; break; }
+        }
+      }
+    }
     model=model.replaceFirst(RegExp(r'^Other\s+',caseSensitive:false),'').trim();
     if(brand!='Other') model=model.replaceFirst(RegExp('^'+RegExp.escape(brand)+r'\s+',caseSensitive:false),'').trim();
     if(brand=='Samsung') {
