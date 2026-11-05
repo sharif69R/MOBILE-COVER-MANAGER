@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
@@ -118,6 +119,20 @@ class Phone {
     return Phone(id.isEmpty ? '${brand}_${model}' : id, brand, model, image.isEmpty ? null : image);
   }
 }
+
+List<Phone> _decodePhoneCatalogue(String source) {
+  final decoded = jsonDecode(source);
+  dynamic rows = decoded;
+  if (decoded is Map) rows = decoded['results'] ?? decoded['data'] ?? decoded['phones'] ?? decoded['items'];
+  if (rows is! List) throw const FormatException('Bundled catalogue has an unknown format');
+  return rows.whereType<Map>().map((e) => Phone.fromJson(Map<String, dynamic>.from(e)))
+      .where((phone) => phone.model != 'Unknown model').toList(growable: false);
+}
+Future<List<Phone>> _loadPhoneCatalogue() async {
+  final source = await rootBundle.loadString('assets/phones.json');
+  return compute(_decodePhoneCatalogue, source);
+}
+
 class CoverApp extends StatelessWidget {
   final Database db;
   const CoverApp({super.key, required this.db});
@@ -137,6 +152,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  static Future<List<Phone>>? _catalogueFuture;
   final search = TextEditingController();
   List<Phone> matches = [];
   List<Map<String, Object?>> stock = [];
@@ -158,15 +174,8 @@ class _HomePageState extends State<HomePage> {
     if (search.text.trim().isEmpty) return;
     setState(() { busy = true; searched = true; error = null; });
     try {
-      // The catalogue is downloaded during the APK build and bundled locally.
-      // Searching therefore works without DNS, an API key, or an internet connection.
-      final decoded = jsonDecode(await rootBundle.loadString('assets/phones.json'));
-      dynamic rows = decoded;
-      if (decoded is Map) {
-        rows = decoded['results'] ?? decoded['data'] ?? decoded['phones'] ?? decoded['items'];
-      }
-      if (rows is! List) throw const FormatException('Bundled catalogue has an unknown format');
-      final all = rows.whereType<Map>().map((e) => Phone.fromJson(Map<String,dynamic>.from(e))).where((p) => p.model != 'Unknown model').toList();
+      // Decode once off the UI thread, then reuse the normalized catalogue for later searches.
+      final all = await (_catalogueFuture ??= _loadPhoneCatalogue());
       final q = search.text.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9 ]'), ' ');
       final terms = q.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
       final ranked = <({Phone phone, int score})>[];
@@ -182,9 +191,10 @@ class _HomePageState extends State<HomePage> {
         ranked.add((phone: phone, score: score));
       }
       ranked.sort((a,b) { final byScore=b.score.compareTo(a.score); if(byScore!=0) return byScore; final byBrand=a.phone.brand.toLowerCase().compareTo(b.phone.brand.toLowerCase()); return byBrand!=0 ? byBrand : a.phone.model.toLowerCase().compareTo(b.phone.model.toLowerCase()); });
-      if (mounted) setState(() => matches = ranked.take(40).map((e) => e.phone).toList());
+      if (mounted) setState(() => matches = ranked.take(24).map((e) => e.phone).toList());
     } catch (e) {
-      if (mounted) setState(() { matches = []; error = 'Could not load the free phone catalogue. Check internet and retry. ($e)'; });
+      _catalogueFuture = null;
+      if (mounted) setState(() { matches = []; error = 'Could not load the phone catalogue. ($e)'; });
     } finally { if (mounted) setState(() => busy = false); }
   }
 
@@ -213,16 +223,18 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<String?> cacheImage(Phone phone) async {
-    final url = phone.image ?? await _PhoneThumbState.lookup(phone.brand, phone.model);
-    if (url == null) return null;
-    try {
-      final r = await http.get(Uri.parse(url)).timeout(const Duration(seconds:15));
-      if (r.statusCode != 200 || r.bodyBytes.isEmpty) return null;
-      final dir = await getApplicationDocumentsDirectory();
-      final file = File(p.join(dir.path,'phone_${url.hashCode}.img'));
-      await file.writeAsBytes(r.bodyBytes,flush:true);
-      return file.path;
-    } catch (_) { return null; }
+    final candidates = <String?>[phone.image, await _PhoneThumbState.lookup(phone.brand, phone.model)];
+    for (final url in candidates.whereType<String>().where((value) => value.startsWith('https://'))) {
+      try {
+        final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds:12));
+        if (response.statusCode != 200 || response.bodyBytes.isEmpty) continue;
+        final dir = await getApplicationDocumentsDirectory();
+        final file = File(p.join(dir.path, 'phone_${url.hashCode}.img'));
+        await file.writeAsBytes(response.bodyBytes, flush:true);
+        return file.path;
+      } catch (_) {}
+    }
+    return null;
   }
 
   Future<void> edit(Phone phone, {Map<String,Object?>? old}) async {
@@ -299,7 +311,7 @@ class _HomePageState extends State<HomePage> {
       const SizedBox(width:8),
       SizedBox(height:56,child:FilledButton(onPressed:busy ? null : findPhones,child:busy ? const SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2)) : const Icon(Icons.arrow_forward)))
     ]),
-    const SizedBox(height:4),const Text('Built-in phone catalogue · Search works offline',style:TextStyle(fontSize:12,color:Colors.black54)),
+    const SizedBox(height:4),const Text('Phone search works offline · Photos load from the internet',style:TextStyle(fontSize:12,color:Colors.black54)),
     if(error != null) Padding(padding:const EdgeInsets.only(top:12),child:Text(error!,style:const TextStyle(color:Colors.red))),
     if(!searched) ...[
       const SizedBox(height:20),const Text('Popular brands',style:TextStyle(fontWeight:FontWeight.bold,fontSize:16)),
@@ -359,55 +371,113 @@ class PhoneThumb extends StatefulWidget {
   State<PhoneThumb> createState() => _PhoneThumbState();
 }
 class _PhoneThumbState extends State<PhoneThumb> {
-  static final Map<String,Future<String?>> _lookups={};
-  static Future<String?> lookup(String brand,String model) async {
+  static final Map<String, Future<String?>> _lookups = {};
+
+  static Future<String?> lookup(String brand, String model) async {
+    // GSMArena search returns product-shot URLs for matching device models.
+    try {
+      final query = '$brand $model'.trim();
+      final uri = Uri.https('www.gsmarena.com', '/res.php3', {'sSearch': query});
+      final response = await http.get(uri, headers: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36'
+      }).timeout(const Duration(seconds:12));
+      if (response.statusCode == 200) {
+        final html = response.body;
+        final anchors = RegExp(r"""<a\b[^>]*href=["']([^"']+\.php3?[^"']*)["'][^>]*>([\s\S]*?)</a>""", caseSensitive:false);
+        final wanted = model.toLowerCase().replaceAll(RegExp(r'[^a-z0-9 ]'), ' ')
+            .split(RegExp(r'\s+')).where((word) => word.length > 1).toList();
+        for (final match in anchors.allMatches(html)) {
+          final body = match.group(2) ?? '';
+          final label = body.replaceAll(RegExp(r'<[^>]*>'), ' ')
+              .replaceAll('&nbsp;', ' ').replaceAll('&amp;', '&').toLowerCase();
+          if (!label.contains(brand.toLowerCase())) continue;
+          if (wanted.isEmpty || !wanted.every((word) => label.contains(word))) continue;
+          final imgTag = RegExp(r'<img\b[^>]*>', caseSensitive:false).firstMatch(body)?.group(0) ?? '';
+          final imageMatch = RegExp(r"""(?:data-src|src)=["']([^"']+)["']""", caseSensitive:false).firstMatch(imgTag);
+          final imagePath = imageMatch?.group(1);
+          if (imagePath == null || imagePath.isEmpty) continue;
+          final imageUrl = Uri.parse('https://www.gsmarena.com').resolve(imagePath).toString();
+          if (imageUrl.startsWith('https://') && imageUrl.contains('gsmarena')) return imageUrl;
+        }
+      }
+    } catch (_) {}
+
+    // Fallback to a matching Wikipedia article thumbnail, not broad image search.
     try {
       final query = brand == 'Samsung' ? '$brand Galaxy $model'.trim() : '$brand $model'.trim();
-      final uri = Uri.https('en.wikipedia.org','/w/api.php',{
-        'action':'query','generator':'search','gsrsearch':'"$query" smartphone phone',
-        'gsrnamespace':'0','gsrlimit':'8','prop':'pageimages','piprop':'thumbnail',
-        'pithumbsize':'360','format':'json'
+      final uri = Uri.https('en.wikipedia.org', '/w/api.php', {
+        'action':'query', 'generator':'search', 'gsrsearch':'"$query" smartphone phone',
+        'gsrnamespace':'0', 'gsrlimit':'8', 'prop':'pageimages', 'piprop':'thumbnail',
+        'pithumbsize':'360', 'format':'json'
       });
-      final response = await http.get(uri,headers:{'User-Agent':'RepairXZoneCoverManagement/1.2 (phone catalogue app)'}).timeout(const Duration(seconds:18));
+      final response = await http.get(uri, headers: {
+        'User-Agent':'RepairXZoneCoverManagement/1.3 (phone catalogue app)'
+      }).timeout(const Duration(seconds:12));
       if (response.statusCode != 200) return null;
-      final decoded = jsonDecode(response.body) as Map<String,dynamic>;
+      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
       final pages = (decoded['query']?['pages'] as Map?)?.values.toList() ?? [];
       int score(Map page) {
         final title = (page['title'] ?? '').toString().toLowerCase();
-        final words = query.toLowerCase().split(RegExp(r'\s+')).where((w)=>w.length>1);
+        final words = query.toLowerCase().split(RegExp(r'\s+')).where((word) => word.length > 1);
         var value = 0;
         for (final word in words) { if (title.contains(word)) value += 10; }
         if (title == query.toLowerCase()) value += 30;
         if (title.contains('disambiguation')) value -= 100;
         return value;
       }
-      pages.sort((a,b)=>score(b as Map).compareTo(score(a as Map)));
+      pages.sort((a,b) => score(b as Map).compareTo(score(a as Map)));
       for (final page in pages) {
-        final thumb = (page['thumbnail'] as Map?)?['source'];
-        if (thumb is String && thumb.startsWith('https://') && score(page as Map) >= 10) return thumb;
+        final thumbnail = (page['thumbnail'] as Map?)?['source'];
+        if (thumbnail is String && thumbnail.startsWith('https://') && score(page as Map) >= 10) return thumbnail;
       }
     } catch (_) {}
     return null;
   }
-  @override
-  Widget build(BuildContext context) {
-    final fallback=const CircleAvatar(child:Icon(Icons.phone_android));
-    if(widget.path!=null && File(widget.path!).existsSync()) {
-      return ClipRRect(borderRadius:BorderRadius.circular(12),child:Image.file(File(widget.path!),width:58,height:58,fit:BoxFit.contain,errorBuilder:(_,__,___)=>fallback));
-    }
-    if(widget.url!=null && widget.url!.startsWith('http')) {
-      return ClipRRect(borderRadius:BorderRadius.circular(12),child:Image.network(widget.url!,width:58,height:58,fit:BoxFit.contain,errorBuilder:(_,__,___)=>fallback));
-    }
-    final key=widget.brand.toLowerCase()+' '+widget.model.toLowerCase();
-    final future=_lookups.putIfAbsent(key,()=>lookup(widget.brand,widget.model));
+
+  Widget _loading() => const CircleAvatar(
+    backgroundColor: Color(0xFFEAF0EF),
+    child: SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2))
+  );
+  Widget _fallback() => CircleAvatar(
+    backgroundColor: const Color(0xFFEAF0EF),
+    child: Column(mainAxisAlignment:MainAxisAlignment.center,children:[
+      const Icon(Icons.phone_android, size:23, color:Color(0xFF087F6B)),
+      Text('No photo',style:const TextStyle(fontSize:7,color:Colors.black54))
+    ])
+  );
+
+  Widget _onlineFallback() {
+    final key = '\${widget.brand.toLowerCase()} \${widget.model.toLowerCase()}';
+    final future = _lookups.putIfAbsent(key, () => lookup(widget.brand, widget.model));
     return FutureBuilder<String?>(
       future:future,
       builder:(context,snapshot) {
-        final imageUrl=snapshot.data;
-        if(imageUrl==null || imageUrl.isEmpty) return fallback;
-        return ClipRRect(borderRadius:BorderRadius.circular(12),child:Image.network(imageUrl,width:58,height:58,fit:BoxFit.contain,errorBuilder:(_,__,___)=>fallback));
+        if (snapshot.connectionState == ConnectionState.waiting) return _loading();
+        final imageUrl = snapshot.data;
+        if (imageUrl == null || imageUrl.isEmpty) return _fallback();
+        return ClipRRect(borderRadius:BorderRadius.circular(12),child:Image.network(
+          imageUrl,width:58,height:58,fit:BoxFit.contain,
+          loadingBuilder:(context,child,progress)=>progress==null?child:_loading(),
+          errorBuilder:(_,__,___)=>_fallback()));
       }
     );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.path != null && File(widget.path!).existsSync()) {
+      return ClipRRect(borderRadius:BorderRadius.circular(12),child:Image.file(
+        File(widget.path!),width:58,height:58,fit:BoxFit.contain,
+        errorBuilder:(_,__,___)=>_onlineFallback()));
+    }
+    final url = widget.url;
+    if (url != null && url.startsWith('https://')) {
+      return ClipRRect(borderRadius:BorderRadius.circular(12),child:Image.network(
+        url,width:58,height:58,fit:BoxFit.contain,
+        loadingBuilder:(context,child,progress)=>progress==null?child:_loading(),
+        errorBuilder:(_,__,___)=>_onlineFallback()));
+    }
+    return _onlineFallback();
   }
 }
 class _Metric extends StatelessWidget {
