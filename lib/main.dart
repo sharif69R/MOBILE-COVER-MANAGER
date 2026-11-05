@@ -1,12 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
-
-const catalogueUrl = 'https://gettechapi.github.io/TechAPI/v1/smartphones/index.json';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,10 +28,30 @@ class Phone {
       }
       return fallback;
     }
-    final brand = get(['brand','manufacturer','maker','vendor'], 'Unknown');
+    var brand = get(['brand','manufacturer','maker','vendor']);
+    final rawBrand = j['brand'];
+    if (brand.isEmpty && rawBrand is Map) {
+      brand = (rawBrand['name'] ?? rawBrand['slug'] ?? '').toString().trim();
+    }
+    final slug = get(['slug','id','key']);
+    if (brand.isEmpty) {
+      final known = <String,String>{
+        'samsung':'Samsung','galaxy':'Samsung','apple':'Apple','iphone':'Apple',
+        'infinix':'Infinix','tecno':'TECNO','oppo':'OPPO','vivo':'vivo',
+        'oneplus':'OnePlus','huawei':'Huawei','honor':'Honor','xiaomi':'Xiaomi',
+        'redmi':'Xiaomi','poco':'POCO','google':'Google','pixel':'Google',
+        'nothing':'Nothing','motorola':'Motorola','realme':'Realme','nokia':'Nokia',
+        'sony':'Sony','asus':'ASUS','lenovo':'Lenovo','zte':'ZTE','nubia':'Nubia',
+        'iqoo':'iQOO','meizu':'Meizu','htc':'HTC','lg':'LG','sharp':'Sharp',
+        'fairphone':'Fairphone','blackview':'Blackview','doogee':'DOOGEE',
+        'ulefone':'Ulefone','tcl':'TCL','itel':'itel'
+      };
+      final first = slug.split('-').first.toLowerCase();
+      brand = known[first] ?? 'Other';
+    }
     final model = get(['model','name','title','device','model_name'], 'Unknown model');
     final img = get(['image_url','imageUrl','image','photo','thumbnail','picture']);
-    return Phone(get(['slug','id','key'], '${brand}_$model'), brand, model, img.isEmpty ? null : img);
+    return Phone(slug.isEmpty ? '${brand}_$model' : slug, brand, model, img.isEmpty ? null : img);
   }
 }
 
@@ -76,22 +95,14 @@ class _HomePageState extends State<HomePage> {
     if (search.text.trim().isEmpty) return;
     setState(() { busy = true; searched = true; error = null; });
     try {
-      final response = await http.get(Uri.parse(catalogueUrl), headers: {'Accept':'application/json'}).timeout(const Duration(seconds: 30));
-      if (response.statusCode != 200) throw HttpException('HTTP ${response.statusCode}');
-      final decoded = jsonDecode(response.body);
+      // The catalogue is downloaded during the APK build and bundled locally.
+      // Searching therefore works without DNS, an API key, or an internet connection.
+      final decoded = jsonDecode(await rootBundle.loadString('assets/phones.json'));
       dynamic rows = decoded;
       if (decoded is Map) {
-        rows = null;
-        for (final key in ['data','devices','smartphones','results','items','phones']) {
-          if (decoded[key] is List) { rows = decoded[key]; break; }
-        }
-        if (rows == null) {
-          for (final value in decoded.values) {
-            if (value is List && value.isNotEmpty && value.first is Map) { rows = value; break; }
-          }
-        }
+        rows = decoded['results'] ?? decoded['data'] ?? decoded['phones'] ?? decoded['items'];
       }
-      if (rows is! List) throw const FormatException('Unknown catalogue format');
+      if (rows is! List) throw const FormatException('Bundled catalogue has an unknown format');
       final all = rows.whereType<Map>().map((e) => Phone.fromJson(Map<String,dynamic>.from(e))).where((p) => p.model != 'Unknown model').toList();
       final q = search.text.trim().toLowerCase();
       final terms = q.split(RegExp(r'\s+'));
@@ -209,7 +220,7 @@ class _HomePageState extends State<HomePage> {
   Widget searchView() => ListView(padding:const EdgeInsets.all(16),children:[
     Container(padding:const EdgeInsets.all(18),decoration:BoxDecoration(borderRadius:BorderRadius.circular(20),gradient:const LinearGradient(colors:[Color(0xFF087F6B),Color(0xFF145D70)])),child:const Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
       Text('Find a phone model',style:TextStyle(color:Colors.white,fontWeight:FontWeight.bold,fontSize:22)),
-      SizedBox(height:5),Text('Search the free online catalogue, then save your cover quantity.',style:TextStyle(color:Colors.white70))
+      SizedBox(height:5),Text('Search the phone catalogue, then save your cover quantity.',style:TextStyle(color:Colors.white70))
     ])),
     const SizedBox(height:14),
     Row(children:[
@@ -217,7 +228,7 @@ class _HomePageState extends State<HomePage> {
       const SizedBox(width:8),
       SizedBox(height:56,child:FilledButton(onPressed:busy ? null : findPhones,child:busy ? const SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2)) : const Icon(Icons.arrow_forward)))
     ]),
-    const SizedBox(height:4),const Text('Free public catalogue · No API key',style:TextStyle(fontSize:12,color:Colors.black54)),
+    const SizedBox(height:4),const Text('Built-in phone catalogue · Search works offline',style:TextStyle(fontSize:12,color:Colors.black54)),
     if(error != null) Padding(padding:const EdgeInsets.only(top:12),child:Text(error!,style:const TextStyle(color:Colors.red))),
     if(!searched) ...[
       const SizedBox(height:20),const Text('Popular brands',style:TextStyle(fontWeight:FontWeight.bold,fontSize:16)),
