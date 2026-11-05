@@ -447,7 +447,7 @@ class _PhoneThumbState extends State<PhoneThumb> {
   );
 
   Widget _onlineFallback() {
-    final key = '\${widget.brand.toLowerCase()} \${widget.model.toLowerCase()}';
+    final key = '${widget.brand.toLowerCase()} ${widget.model.toLowerCase()}';
     final future = _lookups.putIfAbsent(key, () => lookup(widget.brand, widget.model));
     return FutureBuilder<String?>(
       future:future,
