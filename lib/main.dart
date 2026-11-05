@@ -229,18 +229,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<String?> cacheImage(Phone phone) async {
-    final candidates = <String?>[phone.image, await _PhoneThumbState.lookup(phone.brand, phone.model)];
-    for (final url in candidates.whereType<String>().where((value) => value.startsWith('https://'))) {
-      try {
-        final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds:12));
-        if (response.statusCode != 200 || response.bodyBytes.isEmpty) continue;
-        final dir = await getApplicationDocumentsDirectory();
-        final file = File(p.join(dir.path, 'phone_${url.hashCode}.img'));
-        await file.writeAsBytes(response.bodyBytes, flush:true);
-        return file.path;
-      } catch (_) {}
-    }
-    return null;
+    return _PhoneThumbState.loadOfficialPhoto(phone.brand, phone.model);
   }
 
   Future<void> edit(Phone phone, {Map<String,Object?>? old}) async {
@@ -317,13 +306,13 @@ class _HomePageState extends State<HomePage> {
       const SizedBox(width:8),
       SizedBox(height:56,child:FilledButton(onPressed:busy ? null : findPhones,child:busy ? const SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2)) : const Icon(Icons.arrow_forward)))
     ]),
-    const SizedBox(height:4),const Text('Phone search works offline · Photos load from the internet',style:TextStyle(fontSize:12,color:Colors.black54)),
+    const SizedBox(height:4),const Text('Search works offline · Official rear photos save to this device',style:TextStyle(fontSize:12,color:Colors.black54)),
     if(error != null) Padding(padding:const EdgeInsets.only(top:12),child:Text(error!,style:const TextStyle(color:Colors.red))),
     if(!searched) ...[
       const SizedBox(height:20),const Text('Popular brands',style:TextStyle(fontWeight:FontWeight.bold,fontSize:16)),
       const SizedBox(height:8),
       Wrap(spacing:7,runSpacing:7,children:['Samsung','Apple','Infinix','OPPO','vivo','Xiaomi','OnePlus','Huawei','Google Pixel','Nothing','TECNO','Realme','Motorola','Honor'].map((b)=>ActionChip(label:Text(b),onPressed:(){search.text=b;findPhones();})).toList()),
-      const SizedBox(height:20),const Text('• Search the online phone catalogue\n• Enter cover quantity and an optional description\n• Save locally and access your stock offline')
+      const SizedBox(height:20),const Text('• Search the offline phone catalogue\n• Official back-panel photos are saved on this device\n• Enter cover quantity and save your stock offline')
     ],
     if(searched) ...[
       const SizedBox(height:12),Text('${matches.length} matching models',style:const TextStyle(fontWeight:FontWeight.bold)),
@@ -331,7 +320,7 @@ class _HomePageState extends State<HomePage> {
       ...matches.map((phone){
         final old=saved(phone);
         return Card(elevation:0,color:Colors.white,child:ListTile(
-          leading:PhoneThumb(brand:phone.brand,model:phone.model,url:phone.image),
+          leading:PhoneThumb(key:ValueKey('${phone.brand} ${phone.model}'),brand:phone.brand,model:phone.model),
           title:Text('${phone.brand} ${phone.model}',style:const TextStyle(fontWeight:FontWeight.bold)),
           subtitle:Text(old == null ? 'Not saved yet' : 'Saved · ${old['quantity']} cover(s)'),
           trailing:Icon(old == null ? Icons.add_circle_outline : Icons.edit_outlined,color:const Color(0xFF087F6B)),
@@ -353,7 +342,7 @@ class _HomePageState extends State<HomePage> {
         final row=stock[index];
         final path=row['image_path'] as String?;
         return Card(elevation:0,color:Colors.white,child:ListTile(
-          leading:PhoneThumb(brand:'${row['brand']}',model:'${row['model']}',path:path,url:row['image_url'] as String?),
+          leading:PhoneThumb(key:ValueKey('${row['brand']} ${row['model']}'),brand:'${row['brand']}',model:'${row['model']}',path:path),
           title:Text('${row['brand']} ${row['model']}',style:const TextStyle(fontWeight:FontWeight.bold)),
           subtitle:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
             Text((row['quantity'] as int)>0 ? 'AVAILABLE · ${row['quantity']} cover(s)' : 'OUT OF STOCK',style:TextStyle(fontSize:11,fontWeight:FontWeight.bold,color:(row['quantity'] as int)>0 ? const Color(0xFF087F6B) : Colors.red)),
@@ -376,116 +365,116 @@ class PhoneThumb extends StatefulWidget {
   @override
   State<PhoneThumb> createState() => _PhoneThumbState();
 }
+
 class _PhoneThumbState extends State<PhoneThumb> {
-  static final Map<String, Future<String?>> _lookups = {};
+  static final Map<String, Future<String?>> _photoTasks = {};
 
-  static Future<String?> lookup(String brand, String model) async {
-    // GSMArena search returns product-shot URLs for matching device models.
-    try {
-      final query = '$brand $model'.trim();
-      final uri = Uri.https('www.gsmarena.com', '/res.php3', {'sSearch': query});
-      final response = await http.get(uri, headers: {
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36'
-      }).timeout(const Duration(seconds:8));
-      if (response.statusCode == 200) {
-        final html = response.body;
-        final anchors = RegExp(r"""<a\b[^>]*href=["']([^"']+\.php3?[^"']*)["'][^>]*>([\s\S]*?)</a>""", caseSensitive:false);
-        final wanted = model.toLowerCase().replaceAll(RegExp(r'[^a-z0-9 ]'), ' ')
-            .split(RegExp(r'\s+')).where((word) => word.length > 1).toList();
-        for (final match in anchors.allMatches(html)) {
-          final body = match.group(2) ?? '';
-          final label = body.replaceAll(RegExp(r'<[^>]*>'), ' ')
-              .replaceAll('&nbsp;', ' ').replaceAll('&amp;', '&').toLowerCase();
-          if (!label.contains(brand.toLowerCase())) continue;
-          if (wanted.isEmpty || !wanted.every((word) => label.contains(word))) continue;
-          final imgTag = RegExp(r'<img\b[^>]*>', caseSensitive:false).firstMatch(body)?.group(0) ?? '';
-          final imageMatch = RegExp(r"""(?:data-src|src)=["']([^"']+)["']""", caseSensitive:false).firstMatch(imgTag);
-          final imagePath = imageMatch?.group(1);
-          if (imagePath == null || imagePath.isEmpty) continue;
-          final imageUrl = Uri.parse('https://www.gsmarena.com').resolve(imagePath).toString();
-          if (imageUrl.startsWith('https://') && imageUrl.contains('gsmarena')) return imageUrl;
-        }
-      }
-    } catch (_) {}
+  static String _key(String brand, String model) =>
+      (brand + '_' + model).toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_');
 
-    // Fallback to a matching Wikipedia article thumbnail, not broad image search.
+  static Future<String?> _officialBackImageUrl(String brand, String model) async {
+    // Samsung Mobile Press is a manufacturer-owned media library. Only assets
+    // whose official filename/label explicitly says "back" are accepted.
+    if (brand.toLowerCase() != 'samsung') return null;
     try {
-      final query = brand == 'Samsung' ? '$brand Galaxy $model'.trim() : '$brand $model'.trim();
-      final uri = Uri.https('en.wikipedia.org', '/w/api.php', {
-        'action':'query', 'generator':'search', 'gsrsearch':'"$query" smartphone phone',
-        'gsrnamespace':'0', 'gsrlimit':'8', 'prop':'pageimages', 'piprop':'thumbnail',
-        'pithumbsize':'360', 'format':'json'
-      });
+      final query = 'Galaxy ' + model.trim();
+      final uri = Uri.https('api.samsungmobilepress.com', '/fs/', {'keyword': query});
       final response = await http.get(uri, headers: {
-        'User-Agent':'RepairXZoneCoverManagement/1.3 (phone catalogue app)'
-      }).timeout(const Duration(seconds:8));
+        'User-Agent': 'RepairXZoneCoverManagement/1.2 (official product image lookup)'
+      }).timeout(const Duration(seconds: 12));
       if (response.statusCode != 200) return null;
-      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
-      final pages = (decoded['query']?['pages'] as Map?)?.values.toList() ?? [];
-      int score(Map page) {
-        final title = (page['title'] ?? '').toString().toLowerCase();
-        final words = query.toLowerCase().split(RegExp(r'\s+')).where((word) => word.length > 1);
-        var value = 0;
-        for (final word in words) { if (title.contains(word)) value += 10; }
-        if (title == query.toLowerCase()) value += 30;
-        if (title.contains('disambiguation')) value -= 100;
-        return value;
-      }
-      pages.sort((a,b) => score(b as Map).compareTo(score(a as Map)));
-      for (final page in pages) {
-        final thumbnail = (page['thumbnail'] as Map?)?['source'];
-        if (thumbnail is String && thumbnail.startsWith('https://') && score(page as Map) >= 10) return thumbnail;
+
+      final html = response.body;
+      final wanted = model.toLowerCase().replaceAll(RegExp(r'[^a-z0-9 ]'), ' ')
+          .split(RegExp(r'\s+')).where((word) => word.isNotEmpty).toList();
+      final anchors = RegExp(r'<a\b([^>]*)>([\s\S]*?)</a>', caseSensitive: false);
+      for (final match in anchors.allMatches(html)) {
+        final attrs = match.group(1) ?? '';
+        final body = match.group(2) ?? '';
+        final img = RegExp(r'<img\b([^>]*)>', caseSensitive: false).firstMatch(body)?.group(1) ?? '';
+        final label = ('$attrs $body $img')
+            .replaceAll(RegExp(r'<[^>]*>'), ' ')
+            .replaceAll(RegExp(r'&[^;]+;'), ' ')
+            .toLowerCase();
+        if (!label.contains('back')) continue;
+        if (wanted.isEmpty || !wanted.every((word) => label.contains(word))) continue;
+
+        final href = RegExp(r'''href=["']([^"']+)["']''', caseSensitive: false)
+            .firstMatch(attrs)?.group(1);
+        if (href == null) continue;
+        final asset = Uri.parse('https://api.samsungmobilepress.com').resolve(href);
+        if (asset.host == 'api.samsungmobilepress.com' && asset.path.startsWith('/file/')) {
+          return asset.toString();
+        }
       }
     } catch (_) {}
     return null;
   }
 
-  Widget _loading() => const CircleAvatar(
-    backgroundColor: Color(0xFFEAF0EF),
-    child: SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2))
-  );
-  Widget _fallback() => CircleAvatar(
+  static Future<String?> loadOfficialPhoto(String brand, String model) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final folder = Directory(p.join(dir.path, 'official_phone_photos'));
+      if (!await folder.exists()) await folder.create(recursive: true);
+      final file = File(p.join(folder.path, _key(brand, model) + '.img'));
+      if (await file.exists() && await file.length() > 0) return file.path;
+
+      final url = await _officialBackImageUrl(brand, model);
+      if (url == null) return null;
+      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 15));
+      if (response.statusCode != 200 || response.bodyBytes.isEmpty) return null;
+      final contentType = response.headers['content-type']?.toLowerCase() ?? '';
+      if (contentType.contains('text/html')) return null;
+      await file.writeAsBytes(response.bodyBytes, flush: true);
+      return file.path;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<String?> _photo() {
+    final key = _key(widget.brand, widget.model);
+    return _photoTasks.putIfAbsent(key, () async {
+      if (widget.path != null && widget.path!.contains('official_phone_photos')) {
+        final existing = File(widget.path!);
+        if (await existing.exists() && await existing.length() > 0) return existing.path;
+      }
+      return loadOfficialPhoto(widget.brand, widget.model);
+    });
+  }
+
+  Widget _placeholder() => CircleAvatar(
     backgroundColor: const Color(0xFFEAF0EF),
-    child: Column(mainAxisAlignment:MainAxisAlignment.center,children:[
-      const Icon(Icons.phone_android, size:23, color:Color(0xFF087F6B)),
-      Text('No photo',style:const TextStyle(fontSize:7,color:Colors.black54))
+    child: Column(mainAxisAlignment: MainAxisAlignment.center, children: const [
+      Icon(Icons.phone_android, size: 23, color: Color(0xFF087F6B)),
+      Text('No official photo', style: TextStyle(fontSize: 6, color: Colors.black54))
     ])
   );
 
-  Widget _onlineFallback() {
-    final key = '${widget.brand.toLowerCase()} ${widget.model.toLowerCase()}';
-    final future = _lookups.putIfAbsent(key, () => lookup(widget.brand, widget.model));
-    return FutureBuilder<String?>(
-      future:future,
-      builder:(context,snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) return _loading();
-        final imageUrl = snapshot.data;
-        if (imageUrl == null || imageUrl.isEmpty) return _fallback();
-        return ClipRRect(borderRadius:BorderRadius.circular(12),child:Image.network(
-          imageUrl,width:58,height:58,fit:BoxFit.contain,
-          loadingBuilder:(context,child,progress)=>progress==null?child:_loading(),
-          errorBuilder:(_,__,___)=>_fallback()));
-      }
-    );
-  }
-
   @override
-  Widget build(BuildContext context) {
-    if (widget.path != null && File(widget.path!).existsSync()) {
-      return ClipRRect(borderRadius:BorderRadius.circular(12),child:Image.file(
-        File(widget.path!),width:58,height:58,fit:BoxFit.contain,
-        errorBuilder:(_,__,___)=>_onlineFallback()));
+  Widget build(BuildContext context) => FutureBuilder<String?>(
+    future: _photo(),
+    builder: (context, snapshot) {
+      if (snapshot.connectionState == ConnectionState.waiting) {
+        return const CircleAvatar(
+          backgroundColor: Color(0xFFEAF0EF),
+          child: SizedBox(width: 18, height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2))
+        );
+      }
+      final path = snapshot.data;
+      if (path == null || path.isEmpty) return _placeholder();
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Image.file(
+          File(path), width: 58, height: 58, fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => _placeholder()
+        )
+      );
     }
-    final url = widget.url;
-    if (url != null && url.startsWith('https://')) {
-      return ClipRRect(borderRadius:BorderRadius.circular(12),child:Image.network(
-        url,width:58,height:58,fit:BoxFit.contain,
-        loadingBuilder:(context,child,progress)=>progress==null?child:_loading(),
-        errorBuilder:(_,__,___)=>_onlineFallback()));
-    }
-    return _onlineFallback();
-  }
+  );
 }
+
 class _Metric extends StatelessWidget {
   final String label,value;
   const _Metric({required this.label,required this.value});
