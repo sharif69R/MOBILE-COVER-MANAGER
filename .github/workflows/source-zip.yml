@@ -15,7 +15,7 @@ jobs:
       - name: Create source project ZIP
         run: |
           zip -r MOBILE-COVER-MANAGER-project.zip . \
-            -x ".git/*" ".github/workflows/source-zip.yml" "build/*" ".dart_tool/*" ".idea/*"
+            -x ".git/*" ".github/workflows/source-zip.yml" "build/*" ".dart_tool/*" ".idea/*" "MOBILE-COVER-MANAGER-project.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: MOBILE-COVER-MANAGER-project
