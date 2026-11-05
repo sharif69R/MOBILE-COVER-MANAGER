@@ -65,7 +65,7 @@ jobs:
           text = text.replace('android:label="mobile_cover_manager"', 'android:label="Repair X Zone Cover Management"')
           permission = '<uses-permission android:name="android.permission.INTERNET" />'
           if 'android.permission.INTERNET' not in text:
-              text = text.replace('<application', permission + '\\n    <application', 1)
+              text = text.replace('<application', permission + chr(10) + '    <application', 1)
           manifest.write_text(text, encoding='utf-8')
           print('App label set and INTERNET permission enabled for release builds')
           PY
