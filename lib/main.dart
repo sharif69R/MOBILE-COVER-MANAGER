@@ -88,7 +88,7 @@ class Phone {
     model=model.replaceAll(RegExp(r'\s+'),' ').trim();
     if(model.isEmpty) model='Unknown model';
     final image=firstValue(['image_url','imageUrl','image','photo','thumbnail','picture']);
-    return Phone(slug.isEmpty ? '\${brand}_$model' : slug,brand,model,image.isEmpty ? null : image);
+    return Phone(slug.isEmpty ? '${brand}_$model' : slug,brand,model,image.isEmpty ? null : image);
   }
 }
 class CoverApp extends StatelessWidget {
@@ -145,10 +145,10 @@ class _HomePageState extends State<HomePage> {
       final ranked = <({Phone phone, int score})>[];
       final seen = <String>{};
       for (final phone in all) {
-        final display = '\${phone.brand} \${phone.model}'.toLowerCase();
+        final display = '${phone.brand} ${phone.model}'.toLowerCase();
         final tokens = display.replaceAll(RegExp(r'[^a-z0-9 ]'), ' ').split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toSet();
         if (!terms.every((term) => tokens.contains(term))) continue;
-        final identity = '\${phone.brand.toLowerCase()}|\${phone.model.toLowerCase()}';
+        final identity = '${phone.brand.toLowerCase()}|${phone.model.toLowerCase()}';
         if (!seen.add(identity)) continue;
         var score = display == q ? 1000 : display.startsWith(q) ? 500 : 100;
         if (phone.model.toLowerCase().startsWith(q)) score += 200;
@@ -170,7 +170,7 @@ class _HomePageState extends State<HomePage> {
     try {
       final uri = Uri.https('commons.wikimedia.org','/w/api.php',{
         'action':'query','generator':'search','gsrsearch':query,'gsrnamespace':'6',
-        'gsrlimit':'5','prop':'imageinfo','iiprop':'url','iiurlwidth':'320','format':'json'
+        'gsrlimit':'5','prop':'imageinfo','iiprop':'url','iiurlwidth':'360','format':'json'
       });
       final r = await http.get(uri,headers:{'User-Agent':'MobileCoverManager/1.0'}).timeout(const Duration(seconds:15));
       if (r.statusCode != 200) return null;
@@ -336,8 +336,8 @@ class _PhoneThumbState extends State<PhoneThumb> {
   static Future<String?> lookup(String brand,String model) async {
     try {
       final uri=Uri.https('commons.wikimedia.org','/w/api.php',{
-        'action':'query','generator':'search','gsrsearch':'$brand $model smartphone mobile phone',
-        'gsrnamespace':'6','gsrlimit':'20','prop':'imageinfo','iiprop':'url','iiurlwidth':'320','format':'json'
+        'action':'query','generator':'search','gsrsearch':'$brand $model smartphone',
+        'gsrnamespace':'6','gsrlimit':'30','prop':'imageinfo','iiprop':'url','iiurlwidth':'320','format':'json'
       });
       final response=await http.get(uri,headers:{'User-Agent':'RepairXZoneCoverManagement/1.1'}).timeout(const Duration(seconds:18));
       if(response.statusCode!=200) return null;
