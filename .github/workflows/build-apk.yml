@@ -79,6 +79,17 @@ jobs:
       - run: flutter pub get
       - name: Generate Android launcher icons
         run: dart run flutter_launcher_icons
+      - name: Force the branded icon for round and standard launchers
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          manifest = Path('android/app/src/main/AndroidManifest.xml')
+          source = manifest.read_text(encoding='utf-8')
+          if 'android:roundIcon=' not in source:
+              source = source.replace('android:icon="@mipmap/ic_launcher"', 'android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher"')
+          manifest.write_text(source, encoding='utf-8')
+          print('Launcher manifest uses the Repair X Zone icon for standard and round launchers')
+          PY
       - run: flutter build apk --release
       - uses: actions/upload-artifact@v4
         with:
