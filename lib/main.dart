@@ -73,7 +73,7 @@ class Phone {
     var model = rawModel;
     model = model.replaceFirst(RegExp(r'^other\s+',caseSensitive:false),'');
     model = model.replaceFirst(RegExp(r'^(?:' + RegExp.escape(rawBrand) + r')\s+',caseSensitive:false),'');
-    model = model.replaceAll(RegExp(r'\b(?:SM|CPH|RMX|V|I|X)\s*[-_]?[A-Z0-9]{3,}\b',caseSensitive:false),' ');
+    model = model.replaceAll(RegExp(r'\b(?:SM|CPH|RMX)\s*[-_]?[A-Z0-9]{3,}\b',caseSensitive:false),' ');
     model = model.replaceAll(RegExp(r'\b(?:19|20)\d{2}\b.*$'),' ');
     model = model.replaceAll(RegExp(r'\b(?:premium edition|standard edition|dual sim|td-lte|fdd-lte|lte|5g nr|128gb|256gb|512gb|64gb|32gb|cn|hk|tw|us|in|id|my|pk|v1)\b.*$',caseSensitive:false),' ');
     model = model.replaceAll(RegExp(r'\([^)]*\)'),' ');
@@ -99,7 +99,7 @@ class Phone {
     } else if (brand == 'OnePlus') {
       match = RegExp(r'\b((?:Nord\s+)?(?:CE\s*)?\d{1,2}[A-Za-z]?(?:\s+(?:R|Pro|Plus|Lite))?)',caseSensitive:false).firstMatch(model);
     } else if (brand == 'Google') {
-      match = RegExp(r'\b(Pixel\s+[A-Za-z0-9 ]+)',caseSensitive:false).firstMatch(model);
+      match = RegExp(r'\b(Pixel\s+\d+[A-Za-z]?(?:\s+(?:Pro|XL|a|Fold))?)',caseSensitive:false).firstMatch(model);
     } else if (brand == 'Honor') {
       match = RegExp(r'\b((?:Magic|X|Play|90|200)\s*[A-Za-z0-9]+(?:\s+(?:Pro|Plus|Lite|Ultra))*)',caseSensitive:false).firstMatch(model);
     } else if (brand == 'Huawei') {
