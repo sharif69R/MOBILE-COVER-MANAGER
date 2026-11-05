@@ -453,11 +453,11 @@ class _PhoneThumbState extends State<PhoneThumb> {
       if (response.statusCode != 200) return null;
 
       final html = response.body;
-      final cards = RegExp(r'<a\b[^>]*class=["''][^"'']*\biusc\b[^"'']*["''][^>]*>',
+      final cards = RegExp(r'''<a\b[^>]*class=["'][^"']*\biusc\b[^"']*["'][^>]*>''',
           caseSensitive: false).allMatches(html);
       for (final card in cards) {
         final tag = card.group(0) ?? '';
-        final attr = RegExp(r'\bm=(["''])(.*?)\1', caseSensitive: false, dotAll: true)
+        final attr = RegExp(r'''\bm=(["'])(.*?)\1''', caseSensitive: false, dotAll: true)
             .firstMatch(tag);
         if (attr == null) continue;
         final rawMeta = _htmlDecode(attr.group(2) ?? '');
