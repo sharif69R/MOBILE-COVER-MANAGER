@@ -110,6 +110,7 @@ class Phone {
       match = RegExp(r'\b(Phone\s*\(?\d+[A-Za-z]?\)?)',caseSensitive:false).firstMatch(model);
     }
     if (match != null) model = match.group(1)!.trim();
+    if (brand == 'Samsung') model = model.replaceFirst(RegExp(r'^Galaxy\\s+',caseSensitive:false),'').trim();
     model = model.replaceAll(RegExp(r'\s+'),' ').trim();
     if (model.isEmpty) model = 'Unknown model';
 
@@ -180,7 +181,7 @@ class _HomePageState extends State<HomePage> {
         if (phone.model.toLowerCase().startsWith(q)) score += 200;
         ranked.add((phone: phone, score: score));
       }
-      ranked.sort((a,b) => b.score.compareTo(a.score));
+      ranked.sort((a,b) { final byScore=b.score.compareTo(a.score); if(byScore!=0) return byScore; final byBrand=a.phone.brand.toLowerCase().compareTo(b.phone.brand.toLowerCase()); return byBrand!=0 ? byBrand : a.phone.model.toLowerCase().compareTo(b.phone.model.toLowerCase()); });
       if (mounted) setState(() => matches = ranked.take(40).map((e) => e.phone).toList());
     } catch (e) {
       if (mounted) setState(() { matches = []; error = 'Could not load the free phone catalogue. Check internet and retry. ($e)'; });
@@ -361,7 +362,7 @@ class _PhoneThumbState extends State<PhoneThumb> {
   static final Map<String,Future<String?>> _lookups={};
   static Future<String?> lookup(String brand,String model) async {
     try {
-      final query = '$brand $model'.trim();
+      final query = brand == 'Samsung' ? '$brand Galaxy $model'.trim() : '$brand $model'.trim();
       final uri = Uri.https('en.wikipedia.org','/w/api.php',{
         'action':'query','generator':'search','gsrsearch':'"$query" smartphone phone',
         'gsrnamespace':'0','gsrlimit':'8','prop':'pageimages','piprop':'thumbnail',
