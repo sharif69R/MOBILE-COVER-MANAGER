@@ -22,7 +22,14 @@ Future<void> main() async {
 class Phone {
   final String id, brand, model;
   final String? image;
-  const Phone(this.id, this.brand, this.model, this.image);
+  final String searchText;
+  final Set<String> searchTokens;
+  Phone(this.id, this.brand, this.model, this.image)
+      : searchText = '$brand $model'.toLowerCase(),
+        searchTokens = '$brand $model'.toLowerCase()
+            .replaceAll(RegExp(r'[^a-z0-9 ]'), ' ')
+            .split(RegExp(r'\s+'))
+            .where((token) => token.isNotEmpty).toSet();
   factory Phone.fromJson(Map<String, dynamic> j) {
     String read(dynamic value) {
       if (value is Map) return (value['name'] ?? value['slug'] ?? value['title'] ?? '').toString().trim();
@@ -181,9 +188,8 @@ class _HomePageState extends State<HomePage> {
       final ranked = <({Phone phone, int score})>[];
       final seen = <String>{};
       for (final phone in all) {
-        final display = '${phone.brand} ${phone.model}'.toLowerCase();
-        final tokens = display.replaceAll(RegExp(r'[^a-z0-9 ]'), ' ').split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toSet();
-        if (!terms.every((term) => tokens.contains(term))) continue;
+        final display = phone.searchText;
+        if (!terms.every(phone.searchTokens.contains)) continue;
         final identity = '${phone.brand.toLowerCase()}|${phone.model.toLowerCase()}';
         if (!seen.add(identity)) continue;
         var score = display == q ? 1000 : display.startsWith(q) ? 500 : 100;
@@ -380,7 +386,7 @@ class _PhoneThumbState extends State<PhoneThumb> {
       final uri = Uri.https('www.gsmarena.com', '/res.php3', {'sSearch': query});
       final response = await http.get(uri, headers: {
         'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36'
-      }).timeout(const Duration(seconds:12));
+      }).timeout(const Duration(seconds:8));
       if (response.statusCode == 200) {
         final html = response.body;
         final anchors = RegExp(r"""<a\b[^>]*href=["']([^"']+\.php3?[^"']*)["'][^>]*>([\s\S]*?)</a>""", caseSensitive:false);
@@ -412,7 +418,7 @@ class _PhoneThumbState extends State<PhoneThumb> {
       });
       final response = await http.get(uri, headers: {
         'User-Agent':'RepairXZoneCoverManagement/1.3 (phone catalogue app)'
-      }).timeout(const Duration(seconds:12));
+      }).timeout(const Duration(seconds:8));
       if (response.statusCode != 200) return null;
       final decoded = jsonDecode(response.body) as Map<String, dynamic>;
       final pages = (decoded['query']?['pages'] as Map?)?.values.toList() ?? [];
