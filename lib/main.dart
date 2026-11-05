@@ -110,7 +110,7 @@ class Phone {
       match = RegExp(r'\b(Phone\s*\(?\d+[A-Za-z]?\)?)',caseSensitive:false).firstMatch(model);
     }
     if (match != null) model = match.group(1)!.trim();
-    if (brand == 'Samsung') model = model.replaceFirst(RegExp(r'^Galaxy\\s+',caseSensitive:false),'').trim();
+    if (brand == 'Samsung') model = model.replaceFirst(RegExp(r'^Galaxy\s+',caseSensitive:false),'').trim();
     model = model.replaceAll(RegExp(r'\s+'),' ').trim();
     if (model.isEmpty) model = 'Unknown model';
 
