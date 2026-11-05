@@ -18,6 +18,42 @@ jobs:
         with:
           channel: stable
           cache: true
+      - name: Download and prepare offline phone catalogue
+        run: |
+          mkdir -p assets
+          curl --fail --location --retry 4 --retry-all-errors --connect-timeout 30 --max-time 180 https://gettechapi.github.io/TechAPI/v1/smartphones/index.json -o /tmp/phones-source.json
+          python3 - <<'PY'
+          import json, re
+          src = json.load(open('/tmp/phones-source.json', encoding='utf-8'))
+          found = []
+          seen = set()
+          def walk(node, inherited_brand=''):
+              if isinstance(node, list):
+                  for item in node: walk(item, inherited_brand)
+              elif isinstance(node, dict):
+                  brand_value = node.get('brand') or node.get('manufacturer') or node.get('maker') or node.get('vendor') or inherited_brand
+                  if isinstance(brand_value, dict):
+                      brand_value = brand_value.get('name') or brand_value.get('slug') or inherited_brand
+                  brand = str(brand_value or '').strip()
+                  model = node.get('model') or node.get('model_name') or node.get('device_name') or node.get('name') or node.get('title')
+                  slug = node.get('slug') or node.get('id') or node.get('key') or ''
+                  if isinstance(model, (str, int)) and str(model).strip() and (brand or slug):
+                      model = str(model).strip()
+                      key = (brand.lower(), model.lower())
+                      if key not in seen:
+                          seen.add(key)
+                          image = node.get('image_url') or node.get('imageUrl') or node.get('image') or node.get('photo') or node.get('thumbnail') or ''
+                          found.append({'id': str(slug or re.sub(r'[^a-z0-9]+','-',(brand+'-'+model).lower()).strip('-')), 'brand': brand or 'Other', 'model': model, 'image_url': image if isinstance(image,str) else ''})
+                  for k,v in node.items():
+                      if isinstance(v, (dict,list)):
+                          walk(v, brand or inherited_brand)
+          walk(src)
+          if len(found) < 100:
+              raise SystemExit(f'Catalogue validation failed: only {len(found)} phone records found')
+          with open('assets/phones.json','w',encoding='utf-8') as f:
+              json.dump(found,f,ensure_ascii=False,separators=(',',':'))
+          print(f'Prepared {len(found)} offline phone models')
+          PY
       - name: Generate Android platform wrapper
         run: flutter create --platforms=android --project-name mobile_cover_manager --org com.example .
       - run: flutter pub get
