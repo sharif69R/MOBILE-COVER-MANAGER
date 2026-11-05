@@ -56,8 +56,19 @@ jobs:
           PY
       - name: Generate Android platform wrapper
         run: flutter create --platforms=android --project-name mobile_cover_manager --org com.example .
-      - name: Set app display name
-        run: sed -i 's/android:label="mobile_cover_manager"/android:label="Repair X Zone Cover Management"/' android/app/src/main/AndroidManifest.xml
+      - name: Set app display name and enable internet photos
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          manifest = Path('android/app/src/main/AndroidManifest.xml')
+          text = manifest.read_text(encoding='utf-8')
+          text = text.replace('android:label="mobile_cover_manager"', 'android:label="Repair X Zone Cover Management"')
+          permission = '<uses-permission android:name="android.permission.INTERNET" />'
+          if 'android.permission.INTERNET' not in text:
+              text = text.replace('<application', permission + '\\n    <application', 1)
+          manifest.write_text(text, encoding='utf-8')
+          print('App label set and INTERNET permission enabled for release builds')
+          PY
       - name: Prepare Repair X Zone launcher logo
         run: |
           python3 -m pip install --quiet pillow
