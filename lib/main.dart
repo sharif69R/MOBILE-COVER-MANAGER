@@ -213,7 +213,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<String?> cacheImage(Phone phone) async {
-    final url = phone.image ?? await commonsImage('${phone.brand} ${phone.model} smartphone');
+    final url = phone.image ?? await _PhoneThumbState.lookup(phone.brand, phone.model);
     if (url == null) return null;
     try {
       final r = await http.get(Uri.parse(url)).timeout(const Duration(seconds:15));
