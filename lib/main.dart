@@ -374,41 +374,129 @@ class _PhoneThumbState extends State<PhoneThumb> {
   static String _key(String brand, String model) =>
       (brand + '_' + model).toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_');
 
+  static const Map<String, List<String>> _officialDomains = {
+    'samsung': ['samsungmobilepress.com', 'images.samsung.com'],
+    'apple': ['apple.com', 'is1-ssl.mzstatic.com'],
+    'iphone': ['apple.com', 'is1-ssl.mzstatic.com'],
+    'oneplus': ['oneplus.com', 'image01.oneplus.net', 'oasis.opstatics.com'],
+    'xiaomi': ['mi.com', 'appmifile.com', 'mi-img.com'],
+    'redmi': ['mi.com', 'appmifile.com', 'mi-img.com'],
+    'poco': ['mi.com', 'appmifile.com', 'mi-img.com'],
+    'oppo': ['oppo.com', 'image.oppo.com'],
+    'vivo': ['vivo.com', 'vivofs.com'],
+    'iqoo': ['iqoo.com', 'vivo.com', 'vivofs.com'],
+    'realme': ['realme.com', 'realme.net'],
+    'tecno': ['tecno-mobile.com'],
+    'infinix': ['infinixmobility.com'],
+    'itel': ['itel-life.com'],
+    'honor': ['honor.com', 'honorfile.com'],
+    'huawei': ['huawei.com'],
+    'google': ['google.com', 'googleusercontent.com'],
+    'pixel': ['google.com', 'googleusercontent.com'],
+    'motorola': ['motorola.com'],
+    'nothing': ['nothing.tech'],
+    'asus': ['asus.com'],
+    'sony': ['sony.com', 'sony.net'],
+    'nokia': ['hmd.com'],
+    'hmd': ['hmd.com'],
+    'zte': ['zte.com'],
+    'nubia': ['nubia.com'],
+    'tcl': ['tcl.com'],
+    'meizu': ['meizu.com'],
+    'lava': ['lavainternational.in'],
+  };
+
+  static bool _isOfficialHost(String host, List<String> allowed) =>
+      allowed.any((domain) => host == domain || host.endsWith('.' + domain));
+
+  static String _decodeSearchUrl(String value) => value
+      .replaceAll(r'\u003d', '=')
+      .replaceAll(r'\u0026', '&')
+      .replaceAll(r'\u003a', ':')
+      .replaceAll(r'\/', '/')
+      .replaceAll('&amp;', '&');
+
   static Future<String?> _officialBackImageUrl(String brand, String model) async {
-    // Samsung Mobile Press is a manufacturer-owned media library. Only assets
-    // whose official filename/label explicitly says "back" are accepted.
-    if (brand.toLowerCase() != 'samsung') return null;
+    final brandKey = brand.toLowerCase().replaceAll(RegExp(r'[^a-z]'), '');
+    final allowed = _officialDomains[brandKey];
+    if (allowed == null || model.trim().isEmpty) return null;
+
     try {
-      final query = 'Galaxy ' + model.trim();
-      final uri = Uri.https('api.samsungmobilepress.com', '/fs/', {'keyword': query});
-      final response = await http.get(uri, headers: {
-        'User-Agent': 'RepairXZoneCoverManagement/1.2 (official product image lookup)'
-      }).timeout(const Duration(seconds: 12));
-      if (response.statusCode != 200) return null;
-
-      final html = response.body;
-      final wanted = model.toLowerCase().replaceAll(RegExp(r'[^a-z0-9 ]'), ' ')
-          .split(RegExp(r'\s+')).where((word) => word.isNotEmpty).toList();
-      final anchors = RegExp(r'<a\b([^>]*)>([\s\S]*?)</a>', caseSensitive: false);
-      for (final match in anchors.allMatches(html)) {
-        final attrs = match.group(1) ?? '';
-        final body = match.group(2) ?? '';
-        final img = RegExp(r'<img\b([^>]*)>', caseSensitive: false).firstMatch(body)?.group(1) ?? '';
-        final label = ('$attrs $body $img')
-            .replaceAll(RegExp(r'<[^>]*>'), ' ')
-            .replaceAll(RegExp(r'&[^;]+;'), ' ')
-            .toLowerCase();
-        if (!label.contains('back')) continue;
-        if (wanted.isEmpty || !wanted.every((word) => label.contains(word))) continue;
-
-        final href = RegExp(r'''href=["']([^"']+)["']''', caseSensitive: false)
-            .firstMatch(attrs)?.group(1);
-        if (href == null) continue;
-        final asset = Uri.parse('https://api.samsungmobilepress.com').resolve(href);
-        if (asset.host == 'api.samsungmobilepress.com' && asset.path.startsWith('/file/')) {
-          return asset.toString();
+      // Samsung publishes explicit, manufacturer-labelled rear images in its
+      // Mobile Press media library. Use that library instead of image search.
+      if (brandKey == 'samsung') {
+        final q = 'site:api.samsungmobilepress.com/media-assets "Galaxy ' +
+            model.trim() + '"';
+        final searchUri = Uri.https('www.google.com', '/search', {'q': q});
+        final searchResponse = await http.get(searchUri, headers: {
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36'
+        }).timeout(const Duration(seconds: 12));
+        if (searchResponse.statusCode == 200) {
+          final links = RegExp(r'https?://api\.samsungmobilepress\.com/media-assets/[a-z0-9-]+',
+              caseSensitive: false).allMatches(_decodeSearchUrl(searchResponse.body));
+          for (final link in links) {
+            final page = await http.get(Uri.parse(link.group(0)!)).timeout(const Duration(seconds: 12));
+            if (page.statusCode != 200) continue;
+            final html = page.body;
+            final anchors = RegExp(r'<a\b([^>]*)>([\s\S]*?)</a>', caseSensitive: false);
+            for (final match in anchors.allMatches(html)) {
+              final attrs = match.group(1) ?? '';
+              final body = match.group(2) ?? '';
+              final img = RegExp(r'<img\b([^>]*)>', caseSensitive: false)
+                  .firstMatch(body)?.group(1) ?? '';
+              final label = ('$attrs $body $img')
+                  .replaceAll(RegExp(r'<[^>]*>'), ' ')
+                  .replaceAll(RegExp(r'&[^;]+;'), ' ')
+                  .toLowerCase();
+              if (!RegExp(r'\b(back|rear)\b').hasMatch(label)) continue;
+              final href = RegExp(r'''href=["']([^"']+)["']''', caseSensitive: false)
+                  .firstMatch(attrs)?.group(1);
+              if (href == null) continue;
+              final asset = Uri.parse('https://api.samsungmobilepress.com').resolve(href);
+              if (asset.host == 'api.samsungmobilepress.com' &&
+                  asset.path.startsWith('/file/')) return asset.toString();
+            }
+          }
         }
       }
+
+      // Other manufacturers: search only their own domains and known official
+      // image CDNs. The result must explicitly identify a rear/back view.
+      final domains = allowed.map((d) => 'site:' + d).join(' OR ');
+      final query = '($domains) "' + brand + ' ' + model.trim() +
+          '" (back view OR rear view OR back panel) official product image';
+      final uri = Uri.https('www.google.com', '/search', {
+        'tbm': 'isch',
+        'q': query,
+        'safe': 'active'
+      });
+      final response = await http.get(uri, headers: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36'
+      }).timeout(const Duration(seconds: 15));
+      if (response.statusCode != 200) return null;
+
+      final html = _decodeSearchUrl(response.body);
+      final candidates = <String>[];
+      final murl = RegExp(r'"(https?://[^" ]+)"').allMatches(html);
+      for (final match in murl) {
+        final raw = match.group(1);
+        if (raw == null) continue;
+        final candidate = raw.replaceAll(r'\u003d', '=').replaceAll(r'\u0026', '&');
+        final parsed = Uri.tryParse(candidate);
+        if (parsed == null || parsed.scheme != 'https' ||
+            !_isOfficialHost(parsed.host.toLowerCase(), allowed)) continue;
+        if (!RegExp(r'\.(jpg|jpeg|png|webp)(\?|$)', caseSensitive: false)
+            .hasMatch(parsed.path + (parsed.hasQuery ? '?' + parsed.query : ''))) continue;
+
+        final at = match.start;
+        final context = html.substring(
+          at > 900 ? at - 900 : 0,
+          (at + 900 < html.length) ? at + 900 : html.length
+        ).toLowerCase();
+        if (!RegExp(r'\b(back|rear|rear view|back view|back panel)\b').hasMatch(context)) continue;
+        if (!candidates.contains(candidate)) candidates.add(candidate);
+      }
+      if (candidates.isNotEmpty) return candidates.first;
     } catch (_) {}
     return null;
   }
