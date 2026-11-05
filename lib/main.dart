@@ -23,72 +23,98 @@ class Phone {
   final String? image;
   const Phone(this.id, this.brand, this.model, this.image);
   factory Phone.fromJson(Map<String, dynamic> j) {
-    String readValue(dynamic value) {
+    String read(dynamic value) {
       if (value is Map) return (value['name'] ?? value['slug'] ?? value['title'] ?? '').toString().trim();
       return value?.toString().trim() ?? '';
     }
-    String firstValue(List<String> keys) {
-      for (final key in keys) { final value=readValue(j[key]); if(value.isNotEmpty) return value; }
+    String pick(List<String> keys) {
+      for (final key in keys) {
+        final value = read(j[key]);
+        if (value.isNotEmpty) return value;
+      }
       return '';
     }
-    final slug=firstValue(['slug','id','key']);
-    var brand=firstValue(['brand','manufacturer','maker','vendor']);
-    var model=firstValue(['name','model','model_name','device','title']);
-    final combined='$brand $model $slug'.toLowerCase();
-    const brands=<String,String>{
-      'samsung':'Samsung','galaxy':'Samsung','apple':'Apple','iphone':'Apple','infinix':'Infinix',
-      'tecno':'TECNO','oppo':'OPPO','vivo':'vivo','oneplus':'OnePlus','huawei':'Huawei','honor':'Honor',
-      'xiaomi':'Xiaomi','redmi':'Xiaomi','poco':'POCO','google':'Google','pixel':'Google','nothing':'Nothing',
-      'motorola':'Motorola','realme':'Realme','nokia':'Nokia','sony':'Sony','asus':'ASUS','lenovo':'Lenovo',
-      'zte':'ZTE','nubia':'Nubia','iqoo':'iQOO','meizu':'Meizu','htc':'HTC','lg':'LG','sharp':'Sharp',
-      'fairphone':'Fairphone','blackview':'Blackview','doogee':'DOOGEE','ulefone':'Ulefone','tcl':'TCL','itel':'itel'
+
+    final id = pick(['slug','id','key','model_id']);
+    final rawBrand = pick(['brand','manufacturer','maker','vendor']);
+    final rawModel = pick(['name','marketing_name','model_name','model','device','title']);
+    final source = '$rawBrand $rawModel $id'.replaceAll('_',' ').replaceAll('-',' ').toLowerCase();
+
+    const brandPatterns = <String, String>{
+      'samsung':'Samsung','galaxy':'Samsung','sm ':'Samsung','apple':'Apple','iphone':'Apple',
+      'oppo':'OPPO','cph':'OPPO','vivo':'vivo','iqoo':'iQOO','infinix':'Infinix',
+      'tecno':'TECNO','realme':'Realme','rmx':'Realme','xiaomi':'Xiaomi','redmi':'Xiaomi',
+      'poco':'POCO','oneplus':'OnePlus','huawei':'Huawei','honor':'Honor','google':'Google',
+      'pixel':'Google','nothing':'Nothing','motorola':'Motorola','moto':'Motorola','nokia':'Nokia',
+      'sony':'Sony','asus':'ASUS','lenovo':'Lenovo','zte':'ZTE','nubia':'Nubia',
+      'itel':'itel','tcl':'TCL','blackview':'Blackview','doogee':'DOOGEE','ulefone':'Ulefone'
     };
-    if(brand.isEmpty || brand.toLowerCase()=='other' || brand.toLowerCase().contains('other')) {
-      for(final entry in brands.entries) {
-        if(RegExp(r'\b'+RegExp.escape(entry.key)+r'\b',caseSensitive:false).hasMatch(combined)) { brand=entry.value; break; }
+    var brand = '';
+    final b = rawBrand.toLowerCase().trim();
+    if (b.isNotEmpty && b != 'other' && !b.startsWith('other ')) {
+      for (final entry in brandPatterns.entries) {
+        if (b == entry.key || b.startsWith(entry.key) || b.contains(entry.key)) {
+          brand = entry.value;
+          break;
+        }
       }
-      if(brand.isEmpty || brand.toLowerCase()=='other' || brand.toLowerCase().contains('other')) {
-        if(RegExp(r'\bCPH\d+\b',caseSensitive:false).hasMatch(combined)) brand='OPPO';
-        if(RegExp(r'\bSM-[A-Z0-9]+\b',caseSensitive:false).hasMatch(combined)) brand='Samsung';
-        if(RegExp(r'\bRMX\d+\b',caseSensitive:false).hasMatch(combined)) brand='Realme';
-      }
+      if (brand.isEmpty) brand = rawBrand.trim();
     }
-    if(brand.isEmpty || brand.toLowerCase()=='other') brand='Other';
-    else {
-      final canonical=brands[brand.toLowerCase()];
-      if(canonical!=null) brand=canonical;
-      else {
-        for(final entry in brands.entries) {
-          if(brand.toLowerCase().contains(entry.key)) { brand=entry.value; break; }
+    if (brand.isEmpty) {
+      for (final entry in brandPatterns.entries) {
+        if (RegExp(r'(^|[^a-z0-9])' + RegExp.escape(entry.key) + r'([^a-z0-9]|$)', caseSensitive:false).hasMatch(source)) {
+          brand = entry.value;
+          break;
         }
       }
     }
-    model=model.replaceFirst(RegExp(r'^Other\s+',caseSensitive:false),'').trim();
-    if(brand!='Other') model=model.replaceFirst(RegExp('^'+RegExp.escape(brand)+r'\s+',caseSensitive:false),'').trim();
-    if(brand=='Samsung') {
-      final m=RegExp(r'(Galaxy\s+[A-Za-z0-9]+(?:\s+(?:5G|4G|FE|Ultra|Plus|Pro|Edge|Note|Fold|Flip))?)',caseSensitive:false).firstMatch(model);
-      if(m!=null) model=m.group(1)!;
-    } else if(brand=='Apple') {
-      final m=RegExp(r'(iPhone\s+(?:SE(?:\s*\(\d{4}\))?|\d+[A-Za-z]?(?:\s+(?:Pro|Max|Plus|mini))?(?:\s+(?:Pro|Max))?))',caseSensitive:false).firstMatch(model);
-      if(m!=null) model=m.group(1)!;
-    } else if(brand=='OPPO') {
-      final m=RegExp(r'\b(A\d{1,3}(?:\s+Pro)?|Reno\s+[A-Za-z0-9 ]+|Find\s+[A-Za-z0-9 ]+)\b',caseSensitive:false).firstMatch(model);
-      if(m!=null) model=m.group(1)!.trim();
-    } else if(brand=='vivo') {
-      final m=RegExp(r'\b([YVX]\d{1,3}[A-Za-z]?(?:\s+Pro)?)\b',caseSensitive:false).firstMatch(model);
-      if(m!=null) model=m.group(1)!;
-    } else if(brand=='Xiaomi' || brand=='POCO') {
-      final m=RegExp(r'\b((?:Redmi|POCO|Xiaomi)\s+[A-Za-z0-9]+(?:\s+(?:Pro|Plus|Ultra|5G|4G|Note|Max))*)',caseSensitive:false).firstMatch(model);
-      if(m!=null) model=m.group(1)!;
+    if (brand.isEmpty) brand = 'Other';
+
+    var model = rawModel;
+    model = model.replaceFirst(RegExp(r'^other\s+',caseSensitive:false),'');
+    model = model.replaceFirst(RegExp(r'^(?:' + RegExp.escape(rawBrand) + r')\s+',caseSensitive:false),'');
+    model = model.replaceAll(RegExp(r'\b(?:SM|CPH|RMX|V|I|X)\s*[-_]?[A-Z0-9]{3,}\b',caseSensitive:false),' ');
+    model = model.replaceAll(RegExp(r'\b(?:19|20)\d{2}\b.*$'),' ');
+    model = model.replaceAll(RegExp(r'\b(?:premium edition|standard edition|dual sim|td-lte|fdd-lte|lte|5g nr|128gb|256gb|512gb|64gb|32gb|cn|hk|tw|us|in|id|my|pk|v1)\b.*$',caseSensitive:false),' ');
+    model = model.replaceAll(RegExp(r'\([^)]*\)'),' ');
+    model = model.replaceAll(RegExp(r'\s+'),' ').trim();
+
+    RegExpMatch? match;
+    if (brand == 'Samsung') {
+      match = RegExp(r'(Galaxy\s+(?:[ASMFZ]\s*)?\d{1,3}[A-Za-z]?(?:\s+(?:5G|4G|FE|Ultra|Plus|Pro|Edge|Note|Fold|Flip))*)',caseSensitive:false).firstMatch(model);
+    } else if (brand == 'Apple') {
+      match = RegExp(r'(iPhone\s+(?:SE(?:\s*\d{0,2})?|\d{1,2}[A-Za-z]?(?:\s+(?:Pro|Max|Plus|mini))?(?:\s+(?:Pro|Max))?))',caseSensitive:false).firstMatch(model);
+    } else if (brand == 'OPPO') {
+      match = RegExp(r'\b(A\d{1,3}[A-Za-z]?(?:\s+(?:Pro|Plus|s))?|Reno\s*\d{0,2}[A-Za-z]?(?:\s+(?:Pro|Plus|Z))?|Find\s+[A-Za-z0-9 ]+?)\b',caseSensitive:false).firstMatch(model);
+    } else if (brand == 'vivo' || brand == 'iQOO') {
+      match = RegExp(r'\b([YVXZT]\s*\d{1,3}[A-Za-z]?(?:\s+(?:Pro|Plus|Lite|e|T))?)\b',caseSensitive:false).firstMatch(model);
+    } else if (brand == 'Xiaomi' || brand == 'POCO') {
+      match = RegExp(r'\b((?:Redmi\s+)?(?:Note\s+)?(?:\d{1,2}[A-Za-z]?(?:\s+(?:Pro|Plus|Ultra|Max|5G|4G))*)|POCO\s+[A-Za-z0-9 ]+)',caseSensitive:false).firstMatch(model);
+    } else if (brand == 'Infinix') {
+      match = RegExp(r'\b((?:Hot|Note|Zero|Smart|GT)\s+[A-Za-z0-9]+(?:\s+(?:Pro|Plus|Ultra|5G|4G|X))*)',caseSensitive:false).firstMatch(model);
+    } else if (brand == 'TECNO') {
+      match = RegExp(r'\b((?:Spark|Camon|Pova|Phantom|Pop)\s+[A-Za-z0-9]+(?:\s+(?:Pro|Plus|Premier|Ultra|5G|4G))*)',caseSensitive:false).firstMatch(model);
+    } else if (brand == 'Realme') {
+      match = RegExp(r'\b((?:C|GT|Narzo|Number)\s*\d{1,3}[A-Za-z]?(?:\s+(?:Pro|Plus|Ultra|5G|4G|Master))*)',caseSensitive:false).firstMatch(model);
+    } else if (brand == 'OnePlus') {
+      match = RegExp(r'\b((?:Nord\s+)?(?:CE\s*)?\d{1,2}[A-Za-z]?(?:\s+(?:R|Pro|Plus|Lite))?)',caseSensitive:false).firstMatch(model);
+    } else if (brand == 'Google') {
+      match = RegExp(r'\b(Pixel\s+[A-Za-z0-9 ]+)',caseSensitive:false).firstMatch(model);
+    } else if (brand == 'Honor') {
+      match = RegExp(r'\b((?:Magic|X|Play|90|200)\s*[A-Za-z0-9]+(?:\s+(?:Pro|Plus|Lite|Ultra))*)',caseSensitive:false).firstMatch(model);
+    } else if (brand == 'Huawei') {
+      match = RegExp(r'\b((?:Pura|Mate|Nova|P)\s*\d+[A-Za-z]?(?:\s+(?:Pro|Plus|Ultra|Lite))*)',caseSensitive:false).firstMatch(model);
+    } else if (brand == 'Motorola') {
+      match = RegExp(r'\b((?:Moto\s+)?(?:G|E|Edge|Razr)\s*\d{1,3}[A-Za-z]?(?:\s+(?:Power|Play|Plus|Ultra|Pro))*)',caseSensitive:false).firstMatch(model);
+    } else if (brand == 'Nothing') {
+      match = RegExp(r'\b(Phone\s*\(?\d+[A-Za-z]?\)?)',caseSensitive:false).firstMatch(model);
     }
-    model=model.replaceFirst(RegExp(r'^(?:SM-[A-Z0-9]+\s+)+',caseSensitive:false),'');
-    model=model.replaceFirst(RegExp(r'\s*\([^)]*\)\s*$'),'');
-    model=model.replaceFirst(RegExp(r'\s+(?:19|20)\d{2}\b.*$'),'');
-    model=model.replaceFirst(RegExp(r'\s+(?:Premium Edition|Standard Edition|Dual SIM|TD-LTE|FDD-LTE|LTE|5G NR|128GB|256GB|512GB|64GB|32GB|CN|HK|TW|US|IN|ID|MY|PK|V1)\b.*$',caseSensitive:false),'');
-    model=model.replaceAll(RegExp(r'\s+'),' ').trim();
-    if(model.isEmpty) model='Unknown model';
-    final image=firstValue(['image_url','imageUrl','image','photo','thumbnail','picture']);
-    return Phone(slug.isEmpty ? '${brand}_$model' : slug,brand,model,image.isEmpty ? null : image);
+    if (match != null) model = match.group(1)!.trim();
+    model = model.replaceAll(RegExp(r'\s+'),' ').trim();
+    if (model.isEmpty) model = 'Unknown model';
+
+    final image = pick(['image_url','imageUrl','image','photo','thumbnail','picture']);
+    return Phone(id.isEmpty ? '${brand}_${model}' : id, brand, model, image.isEmpty ? null : image);
   }
 }
 class CoverApp extends StatelessWidget {
@@ -335,31 +361,29 @@ class _PhoneThumbState extends State<PhoneThumb> {
   static final Map<String,Future<String?>> _lookups={};
   static Future<String?> lookup(String brand,String model) async {
     try {
-      final uri=Uri.https('commons.wikimedia.org','/w/api.php',{
-        'action':'query','generator':'search','gsrsearch':'$brand $model smartphone',
-        'gsrnamespace':'6','gsrlimit':'30','prop':'imageinfo','iiprop':'url','iiurlwidth':'320','format':'json'
+      final query = '$brand $model'.trim();
+      final uri = Uri.https('en.wikipedia.org','/w/api.php',{
+        'action':'query','generator':'search','gsrsearch':'"$query" smartphone phone',
+        'gsrnamespace':'0','gsrlimit':'8','prop':'pageimages','piprop':'thumbnail',
+        'pithumbsize':'360','format':'json'
       });
-      final response=await http.get(uri,headers:{'User-Agent':'RepairXZoneCoverManagement/1.1'}).timeout(const Duration(seconds:18));
-      if(response.statusCode!=200) return null;
-      final decoded=jsonDecode(response.body) as Map<String,dynamic>;
-      final pages=(decoded['query']?['pages'] as Map?)?.values.toList() ?? [];
+      final response = await http.get(uri,headers:{'User-Agent':'RepairXZoneCoverManagement/1.2 (phone catalogue app)'}).timeout(const Duration(seconds:18));
+      if (response.statusCode != 200) return null;
+      final decoded = jsonDecode(response.body) as Map<String,dynamic>;
+      final pages = (decoded['query']?['pages'] as Map?)?.values.toList() ?? [];
       int score(Map page) {
-        final title=(page['title'] ?? '').toString().toLowerCase();
-        var points=0;
-        for(final word in ('$brand $model').toLowerCase().split(RegExp(r'\s+'))) {
-          if(word.length>1 && title.contains(word)) points+=3;
-        }
-        if(title.contains('phone') || title.contains('mobile')) points+=2;
-        if(title.endsWith('.jpg') || title.endsWith('.jpeg') || title.endsWith('.png') || title.endsWith('.webp')) points+=1;
-        return points;
+        final title = (page['title'] ?? '').toString().toLowerCase();
+        final words = query.toLowerCase().split(RegExp(r'\s+')).where((w)=>w.length>1);
+        var value = 0;
+        for (final word in words) { if (title.contains(word)) value += 10; }
+        if (title == query.toLowerCase()) value += 30;
+        if (title.contains('disambiguation')) value -= 100;
+        return value;
       }
       pages.sort((a,b)=>score(b as Map).compareTo(score(a as Map)));
-      for(final page in pages) {
-        final infos=page['imageinfo'] as List?;
-        if(infos==null || infos.isEmpty) continue;
-        final info=infos.first as Map;
-        final candidate=info['thumburl'] ?? info['url'];
-        if(candidate is String && candidate.startsWith('https://')) return candidate;
+      for (final page in pages) {
+        final thumb = (page['thumbnail'] as Map?)?['source'];
+        if (thumb is String && thumb.startsWith('https://') && score(page as Map) >= 10) return thumb;
       }
     } catch (_) {}
     return null;
