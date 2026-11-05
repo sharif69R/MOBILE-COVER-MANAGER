@@ -72,7 +72,11 @@ class Phone {
       model = model.replaceFirst(RegExp('^' + RegExp.escape(brand) + r'\s+', caseSensitive:false), '');
     }
     model = model.replaceFirst(RegExp(r'^(SM-[A-Z0-9]+\s+)+', caseSensitive:false), '');
-    model = model.replaceFirst(RegExp(r'\s*\((Samsung|Apple|Xiaomi|OPPO|vivo)[^)]*\)\s*
+    model = model.replaceFirst(RegExp(r'\s*\((Samsung|Apple|Xiaomi|OPPO|vivo)[^)]*\)'), '');
+    model = model.replaceFirst(RegExp(r'\s+(Premium Edition|Standard Edition|Dual SIM|TD-LTE|FDD-LTE|LTE|5G NR|128GB|256GB|512GB|CN|HK|TW|US)\b.*', caseSensitive:false), '');
+    model = model.trim();
+    final img = get(['image_url','imageUrl','image','photo','thumbnail','picture']);
+    return Phone(slug.isEmpty ? brand + '_' + model : slug, brand, model, img.isEmpty ? null : img);
   }
 }
 
@@ -343,7 +347,7 @@ class _PhoneThumbState extends State<PhoneThumb> {
     if(widget.url != null && widget.url!.startsWith('http')) {
       return ClipRRect(borderRadius:BorderRadius.circular(12),child:Image.network(widget.url!,width:58,height:58,fit:BoxFit.contain,errorBuilder:(_,__,___)=>fallback));
     }
-    final key='\${widget.brand.toLowerCase()} \${widget.model.toLowerCase()}';
+    final key='${widget.brand.toLowerCase()} ${widget.model.toLowerCase()}';
     final future=_imageLookups.putIfAbsent(key,()=>_lookup(widget.brand,widget.model));
     return FutureBuilder<String?>(
       future:future,
