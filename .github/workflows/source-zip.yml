@@ -1,0 +1,24 @@
+name: Package Full Project ZIP
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Create source project ZIP
+        run: |
+          zip -r MOBILE-COVER-MANAGER-project.zip . \
+            -x ".git/*" ".github/workflows/source-zip.yml" "build/*" ".dart_tool/*" ".idea/*"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MOBILE-COVER-MANAGER-project
+          path: MOBILE-COVER-MANAGER-project.zip
+          if-no-files-found: error
+          retention-days: 30
