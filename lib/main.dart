@@ -23,40 +23,65 @@ class Phone {
   final String? image;
   const Phone(this.id, this.brand, this.model, this.image);
   factory Phone.fromJson(Map<String, dynamic> j) {
-    String get(List<String> keys, [String fallback = '']) {
-      for (final k in keys) {
-        final v = j[k];
-        if (v != null && v.toString().trim().isNotEmpty) return v.toString().trim();
+    String readValue(dynamic value) {
+      if (value is Map) return (value['name'] ?? value['slug'] ?? value['title'] ?? '').toString().trim();
+      return value?.toString().trim() ?? '';
+    }
+    String firstValue(List<String> keys) {
+      for (final key in keys) { final value=readValue(j[key]); if(value.isNotEmpty) return value; }
+      return '';
+    }
+    final slug=firstValue(['slug','id','key']);
+    var brand=firstValue(['brand','manufacturer','maker','vendor']);
+    var model=firstValue(['name','model','model_name','device','title']);
+    final combined='$brand $model $slug'.toLowerCase();
+    const brands=<String,String>{
+      'samsung':'Samsung','galaxy':'Samsung','apple':'Apple','iphone':'Apple','infinix':'Infinix',
+      'tecno':'TECNO','oppo':'OPPO','vivo':'vivo','oneplus':'OnePlus','huawei':'Huawei','honor':'Honor',
+      'xiaomi':'Xiaomi','redmi':'Xiaomi','poco':'POCO','google':'Google','pixel':'Google','nothing':'Nothing',
+      'motorola':'Motorola','realme':'Realme','nokia':'Nokia','sony':'Sony','asus':'ASUS','lenovo':'Lenovo',
+      'zte':'ZTE','nubia':'Nubia','iqoo':'iQOO','meizu':'Meizu','htc':'HTC','lg':'LG','sharp':'Sharp',
+      'fairphone':'Fairphone','blackview':'Blackview','doogee':'DOOGEE','ulefone':'Ulefone','tcl':'TCL','itel':'itel'
+    };
+    if(brand.isEmpty || brand.toLowerCase()=='other' || brand.toLowerCase().contains('other')) {
+      for(final entry in brands.entries) {
+        if(RegExp(r'\b'+RegExp.escape(entry.key)+r'\b',caseSensitive:false).hasMatch(combined)) { brand=entry.value; break; }
       }
-      return fallback;
+      if(brand.isEmpty || brand.toLowerCase()=='other' || brand.toLowerCase().contains('other')) {
+        if(RegExp(r'\bCPH\d+\b',caseSensitive:false).hasMatch(combined)) brand='OPPO';
+        if(RegExp(r'\bSM-[A-Z0-9]+\b',caseSensitive:false).hasMatch(combined)) brand='Samsung';
+        if(RegExp(r'\bRMX\d+\b',caseSensitive:false).hasMatch(combined)) brand='Realme';
+      }
     }
-    var brand = get(['brand','manufacturer','maker','vendor']);
-    final rawBrand = j['brand'];
-    if (brand.isEmpty && rawBrand is Map) {
-      brand = (rawBrand['name'] ?? rawBrand['slug'] ?? '').toString().trim();
+    if(brand.isEmpty || brand.toLowerCase()=='other') brand='Other';
+    model=model.replaceFirst(RegExp(r'^Other\s+',caseSensitive:false),'').trim();
+    if(brand!='Other') model=model.replaceFirst(RegExp('^'+RegExp.escape(brand)+r'\s+',caseSensitive:false),'').trim();
+    if(brand=='Samsung') {
+      final m=RegExp(r'(Galaxy\s+[A-Za-z0-9]+(?:\s+(?:5G|4G|FE|Ultra|Plus|Pro|Edge|Note|Fold|Flip))?)',caseSensitive:false).firstMatch(model);
+      if(m!=null) model=m.group(1)!;
+    } else if(brand=='Apple') {
+      final m=RegExp(r'(iPhone\s+(?:SE(?:\s*\(\d{4}\))?|\d+[A-Za-z]?(?:\s+(?:Pro|Max|Plus|mini))?(?:\s+(?:Pro|Max))?))',caseSensitive:false).firstMatch(model);
+      if(m!=null) model=m.group(1)!;
+    } else if(brand=='OPPO') {
+      final m=RegExp(r'\b(A\d{1,3}(?:\s+Pro)?|Reno\s+[A-Za-z0-9 ]+|Find\s+[A-Za-z0-9 ]+)\b',caseSensitive:false).firstMatch(model);
+      if(m!=null) model=m.group(1)!.trim();
+    } else if(brand=='vivo') {
+      final m=RegExp(r'\b([YVX]\d{1,3}[A-Za-z]?(?:\s+Pro)?)\b',caseSensitive:false).firstMatch(model);
+      if(m!=null) model=m.group(1)!;
+    } else if(brand=='Xiaomi' || brand=='POCO') {
+      final m=RegExp(r'\b((?:Redmi|POCO|Xiaomi)\s+[A-Za-z0-9]+(?:\s+(?:Pro|Plus|Ultra|5G|4G|Note|Max))*)',caseSensitive:false).firstMatch(model);
+      if(m!=null) model=m.group(1)!;
     }
-    final slug = get(['slug','id','key']);
-    if (brand.isEmpty) {
-      final known = <String,String>{
-        'samsung':'Samsung','galaxy':'Samsung','apple':'Apple','iphone':'Apple',
-        'infinix':'Infinix','tecno':'TECNO','oppo':'OPPO','vivo':'vivo',
-        'oneplus':'OnePlus','huawei':'Huawei','honor':'Honor','xiaomi':'Xiaomi',
-        'redmi':'Xiaomi','poco':'POCO','google':'Google','pixel':'Google',
-        'nothing':'Nothing','motorola':'Motorola','realme':'Realme','nokia':'Nokia',
-        'sony':'Sony','asus':'ASUS','lenovo':'Lenovo','zte':'ZTE','nubia':'Nubia',
-        'iqoo':'iQOO','meizu':'Meizu','htc':'HTC','lg':'LG','sharp':'Sharp',
-        'fairphone':'Fairphone','blackview':'Blackview','doogee':'DOOGEE',
-        'ulefone':'Ulefone','tcl':'TCL','itel':'itel'
-      };
-      final first = slug.split('-').first.toLowerCase();
-      brand = known[first] ?? 'Other';
-    }
-    final model = get(['model','name','title','device','model_name'], 'Unknown model');
-    final img = get(['image_url','imageUrl','image','photo','thumbnail','picture']);
-    return Phone(slug.isEmpty ? '${brand}_$model' : slug, brand, model, img.isEmpty ? null : img);
+    model=model.replaceFirst(RegExp(r'^(?:SM-[A-Z0-9]+\s+)+',caseSensitive:false),'');
+    model=model.replaceFirst(RegExp(r'\s*\([^)]*\)\s*$'),'');
+    model=model.replaceFirst(RegExp(r'\s+(?:19|20)\d{2}\b.*$'),'');
+    model=model.replaceFirst(RegExp(r'\s+(?:Premium Edition|Standard Edition|Dual SIM|TD-LTE|FDD-LTE|LTE|5G NR|128GB|256GB|512GB|64GB|32GB|CN|HK|TW|US|IN|ID|MY|PK|V1)\b.*$',caseSensitive:false),'');
+    model=model.replaceAll(RegExp(r'\s+'),' ').trim();
+    if(model.isEmpty) model='Unknown model';
+    final image=firstValue(['image_url','imageUrl','image','photo','thumbnail','picture']);
+    return Phone(slug.isEmpty ? '\${brand}_$model' : slug,brand,model,image.isEmpty ? null : image);
   }
 }
-
 class CoverApp extends StatelessWidget {
   final Database db;
   const CoverApp({super.key, required this.db});
@@ -106,17 +131,22 @@ class _HomePageState extends State<HomePage> {
       }
       if (rows is! List) throw const FormatException('Bundled catalogue has an unknown format');
       final all = rows.whereType<Map>().map((e) => Phone.fromJson(Map<String,dynamic>.from(e))).where((p) => p.model != 'Unknown model').toList();
-      final q = search.text.trim().toLowerCase();
-      final terms = q.split(RegExp(r'\s+'));
+      final q = search.text.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9 ]'), ' ');
+      final terms = q.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
       final ranked = <({Phone phone, int score})>[];
+      final seen = <String>{};
       for (final phone in all) {
-        final text = '${phone.brand} ${phone.model}'.toLowerCase();
-        var score = text == q ? 100 : text.startsWith(q) ? 60 : text.contains(q) ? 30 : 0;
-        for (final term in terms) { if (text.contains(term)) score += 10; }
-        if (score > 0) ranked.add((phone: phone, score: score));
+        final display = '\${phone.brand} \${phone.model}'.toLowerCase();
+        final tokens = display.replaceAll(RegExp(r'[^a-z0-9 ]'), ' ').split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toSet();
+        if (!terms.every((term) => tokens.contains(term))) continue;
+        final identity = '\${phone.brand.toLowerCase()}|\${phone.model.toLowerCase()}';
+        if (!seen.add(identity)) continue;
+        var score = display == q ? 1000 : display.startsWith(q) ? 500 : 100;
+        if (phone.model.toLowerCase().startsWith(q)) score += 200;
+        ranked.add((phone: phone, score: score));
       }
       ranked.sort((a,b) => b.score.compareTo(a.score));
-      if (mounted) setState(() => matches = ranked.take(60).map((e) => e.phone).toList());
+      if (mounted) setState(() => matches = ranked.take(40).map((e) => e.phone).toList());
     } catch (e) {
       if (mounted) setState(() { matches = []; error = 'Could not load the free phone catalogue. Check internet and retry. ($e)'; });
     } finally { if (mounted) setState(() => busy = false); }
@@ -292,27 +322,34 @@ class PhoneThumb extends StatefulWidget {
   @override
   State<PhoneThumb> createState() => _PhoneThumbState();
 }
-
 class _PhoneThumbState extends State<PhoneThumb> {
-  static final Map<String, Future<String?>> _lookups = {};
-  static Future<String?> lookup(String brand, String model) async {
+  static final Map<String,Future<String?>> _lookups={};
+  static Future<String?> lookup(String brand,String model) async {
     try {
-      final uri = Uri.https('commons.wikimedia.org', '/w/api.php', {
-        'action':'query','generator':'search',
-        'gsrsearch':'"$brand $model" smartphone',
-        'gsrnamespace':'6','gsrlimit':'10','prop':'imageinfo',
-        'iiprop':'url','iiurlwidth':'320','format':'json'
+      final uri=Uri.https('commons.wikimedia.org','/w/api.php',{
+        'action':'query','generator':'search','gsrsearch':'$brand $model smartphone mobile phone',
+        'gsrnamespace':'6','gsrlimit':'20','prop':'imageinfo','iiprop':'url','iiurlwidth':'320','format':'json'
       });
-      final response = await http.get(uri, headers:{'User-Agent':'RepairXZoneCoverManagement/1.0'}).timeout(const Duration(seconds:15));
-      if(response.statusCode != 200) return null;
-      final decoded = jsonDecode(response.body) as Map<String,dynamic>;
-      final pages = (decoded['query']?['pages'] as Map?)?.values;
-      if(pages == null) return null;
+      final response=await http.get(uri,headers:{'User-Agent':'RepairXZoneCoverManagement/1.1'}).timeout(const Duration(seconds:18));
+      if(response.statusCode!=200) return null;
+      final decoded=jsonDecode(response.body) as Map<String,dynamic>;
+      final pages=(decoded['query']?['pages'] as Map?)?.values.toList() ?? [];
+      int score(Map page) {
+        final title=(page['title'] ?? '').toString().toLowerCase();
+        var points=0;
+        for(final word in ('$brand $model').toLowerCase().split(RegExp(r'\s+'))) {
+          if(word.length>1 && title.contains(word)) points+=3;
+        }
+        if(title.contains('phone') || title.contains('mobile')) points+=2;
+        if(title.endsWith('.jpg') || title.endsWith('.jpeg') || title.endsWith('.png') || title.endsWith('.webp')) points+=1;
+        return points;
+      }
+      pages.sort((a,b)=>score(b as Map).compareTo(score(a as Map)));
       for(final page in pages) {
-        final infos = page['imageinfo'] as List?;
-        if(infos == null || infos.isEmpty) continue;
-        final info = infos.first as Map;
-        final candidate = info['thumburl'] ?? info['url'];
+        final infos=page['imageinfo'] as List?;
+        if(infos==null || infos.isEmpty) continue;
+        final info=infos.first as Map;
+        final candidate=info['thumburl'] ?? info['url'];
         if(candidate is String && candidate.startsWith('https://')) return candidate;
       }
     } catch (_) {}
@@ -320,26 +357,25 @@ class _PhoneThumbState extends State<PhoneThumb> {
   }
   @override
   Widget build(BuildContext context) {
-    final fallback = const CircleAvatar(child:Icon(Icons.phone_android));
-    if(widget.path != null && File(widget.path!).existsSync()) {
-      return ClipRRect(borderRadius:BorderRadius.circular(12),child:Image.file(File(widget.path!),width:54,height:54,fit:BoxFit.contain,errorBuilder:(_,__,___)=>fallback));
+    final fallback=const CircleAvatar(child:Icon(Icons.phone_android));
+    if(widget.path!=null && File(widget.path!).existsSync()) {
+      return ClipRRect(borderRadius:BorderRadius.circular(12),child:Image.file(File(widget.path!),width:58,height:58,fit:BoxFit.contain,errorBuilder:(_,__,___)=>fallback));
     }
-    if(widget.url != null && widget.url!.startsWith('http')) {
-      return ClipRRect(borderRadius:BorderRadius.circular(12),child:Image.network(widget.url!,width:54,height:54,fit:BoxFit.contain,errorBuilder:(_,__,___)=>fallback));
+    if(widget.url!=null && widget.url!.startsWith('http')) {
+      return ClipRRect(borderRadius:BorderRadius.circular(12),child:Image.network(widget.url!,width:58,height:58,fit:BoxFit.contain,errorBuilder:(_,__,___)=>fallback));
     }
-    final key = widget.brand.toLowerCase() + ' ' + widget.model.toLowerCase();
-    final future = _lookups.putIfAbsent(key,()=>lookup(widget.brand,widget.model));
+    final key=widget.brand.toLowerCase()+' '+widget.model.toLowerCase();
+    final future=_lookups.putIfAbsent(key,()=>lookup(widget.brand,widget.model));
     return FutureBuilder<String?>(
       future:future,
       builder:(context,snapshot) {
-        final imageUrl = snapshot.data;
-        if(imageUrl == null || imageUrl.isEmpty) return fallback;
-        return ClipRRect(borderRadius:BorderRadius.circular(12),child:Image.network(imageUrl,width:54,height:54,fit:BoxFit.contain,errorBuilder:(_,__,___)=>fallback));
+        final imageUrl=snapshot.data;
+        if(imageUrl==null || imageUrl.isEmpty) return fallback;
+        return ClipRRect(borderRadius:BorderRadius.circular(12),child:Image.network(imageUrl,width:58,height:58,fit:BoxFit.contain,errorBuilder:(_,__,___)=>fallback));
       }
     );
   }
 }
-
 class _Metric extends StatelessWidget {
   final String label,value;
   const _Metric({required this.label,required this.value});
